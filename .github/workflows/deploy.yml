@@ -29,9 +29,6 @@ jobs:
         env:
           BEBIG_SUPABASE_URL: ${{ vars.BEBIG_SUPABASE_URL }}
           BEBIG_SUPABASE_ANON_KEY: ${{ vars.BEBIG_SUPABASE_ANON_KEY }}
-      - name: Custom domain
-        if: ${{ vars.BEBIG_DOMAIN != '' }}
-        run: echo "${{ vars.BEBIG_DOMAIN }}" > dist/CNAME
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

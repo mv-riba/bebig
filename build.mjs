@@ -9,6 +9,11 @@ try { esbuild = require('esbuild'); } catch { esbuild = require('/opt/npm-tools/
 
 const serve = process.argv.includes('--serve');
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+// Public client config (the anon key is designed to be public; row-level security protects data). Env vars override.
+const cfg = fs.existsSync('bebig.config.json') ? JSON.parse(fs.readFileSync('bebig.config.json', 'utf8')) : {};
+const supabaseUrl = process.env.BEBIG_SUPABASE_URL || cfg.supabaseUrl || '';
+const supabaseAnonKey = process.env.BEBIG_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || '';
+const remote = !serve && supabaseUrl && supabaseAnonKey;
 const version = pkg.version + (serve ? '-dev' : '');
 const out = 'dist';
 fs.rmSync(out, { recursive: true, force: true });
@@ -20,7 +25,7 @@ const opts = {
   minify: !serve, sourcemap: serve ? 'inline' : false, jsx: 'automatic', loader: { '.json': 'json' }, metafile: true,
   define: {
     'process.env.NODE_ENV': JSON.stringify(serve ? 'development' : 'production'),
-    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: process.env.BEBIG_SUPABASE_URL || '', supabaseAnonKey: process.env.BEBIG_SUPABASE_ANON_KEY || '', version }),
+    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: remote ? supabaseUrl : '', supabaseAnonKey: remote ? supabaseAnonKey : '', version }),
   },
 };
 
@@ -43,5 +48,6 @@ if (serve) {
   const r = await esbuild.build(opts);
   writeHtml(r.metafile);
   const size = Object.entries(r.metafile.outputs).map(([f, o]) => `${path.basename(f)} ${(o.bytes / 1024).toFixed(1)} kB`).join(', ');
-  console.log('Built dist/:', size);
+  if (cfg.domain) fs.writeFileSync(path.join(out, 'CNAME'), cfg.domain + '\n');
+  console.log('Built dist/:', size, remote ? '(cloud sync: ' + supabaseUrl + ')' : '(local mode — no Supabase anon key set)');
 }
