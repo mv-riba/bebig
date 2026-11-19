@@ -1,0 +1,153 @@
+import React, { useState, useEffect } from 'react';
+import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
+import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
+import { useBaby } from '../ui/hooks';
+import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, feedTimerTotals, getState } from '../lib/store';
+import { toLocalInput, fromLocalInput, formatClock, dayStart, zonedParts } from '../lib/time';
+import type { FeedingEntry, FeedingType } from '../lib/types';
+
+export const OBSERVATIONS = ['Very hungry', 'Hungry', 'Not very hungry', 'Fell asleep during feeding', 'Difficult feeding', 'Other'];
+
+/** Default time for a new entry: now, or the same clock time on a past day chosen in the calendar. */
+export function defaultTime(tz: string, onKey?: string) {
+  if (!onKey) return new Date().toISOString();
+  const p = zonedParts(new Date(), tz);
+  return new Date(dayStart(onKey, tz).getTime() + (p.h * 60 + p.mi) * 60000).toISOString();
+}
+
+export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
+  const ctx = useBaby(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
+  const existing: FeedingEntry | undefined = entryId ? getState().feeds[entryId] : undefined;
+  const pref = ctx?.baby.feeding_preference ?? 'combination';
+  const allowed: FeedingType[] = pref === 'breast' ? ['breast'] : pref === 'formula' ? ['formula'] : ['breast', 'expressed', 'formula'];
+  if (existing && !allowed.includes(existing.feeding_type)) allowed.push(existing.feeding_type); // preserve historical types
+  const tz = ctx?.baby.timezone ?? 'UTC';
+
+  const [type, setType] = useState<FeedingType>(existing?.feeding_type ?? allowed[0]);
+  const [start, setStart] = useState(toLocalInput(existing?.start_datetime ?? defaultTime(tz, onKey), tz));
+  const [end, setEnd] = useState(existing?.end_datetime && existing.feeding_type !== 'breast' ? toLocalInput(existing.end_datetime, tz) : '');
+  const [durMin, setDurMin] = useState<number | null>(existing?.duration_seconds != null ? Math.round(existing.duration_seconds / 60) : null);
+  const [left, setLeft] = useState<number | null>(existing?.left_duration_seconds != null ? Math.round(existing.left_duration_seconds / 60) : null);
+  const [right, setRight] = useState<number | null>(existing?.right_duration_seconds != null ? Math.round(existing.right_duration_seconds / 60) : null);
+  const [sides, setSides] = useState(existing ? existing.left_duration_seconds != null || existing.right_duration_seconds != null : false);
+  const [qty, setQty] = useState<number | null>(existing?.quantity_ml ?? null);
+  const [obs, setObs] = useState<string[]>(existing?.observations ?? []);
+  const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [err, setErr] = useState<string | null>(null);
+
+  // keep total in sync with per-side durations when those are used
+  useEffect(() => { if (sides && (left != null || right != null)) setDurMin((left || 0) + (right || 0)); }, [left, right, sides]);
+
+  if (!ctx) return null;
+  const { baby, feedTimer } = ctx;
+  const timer = !existing && type === 'breast' ? feedTimer : null;
+  const totals = timer ? feedTimerTotals(timer, now) : null;
+
+  const save = (fromTimer = false) => {
+    setErr(null);
+    try {
+      let row: Partial<FeedingEntry> = { baby_id: baby.baby_id, feeding_type: type, observations: obs, notes: notes.trim() || null };
+      if (existing) row.feed_id = existing.feed_id;
+      if (fromTimer && timer) {
+        const t = feedTimerTotals(timer);
+        const sided = t.left + t.right > 0;
+        row = { ...row, start_datetime: timer.started_at, end_datetime: new Date().toISOString(), duration_seconds: Math.round(t.total),
+          left_duration_seconds: sided ? Math.round(t.left) : null, right_duration_seconds: sided ? Math.round(t.right) : null, quantity_ml: null };
+      } else {
+        const s = fromLocalInput(start, tz);
+        if (new Date(s).getTime() > Date.now() + 5 * 60000) throw new Error('Start time can’t be in the future.');
+        row.start_datetime = s;
+        if (type === 'breast') {
+          const d = durMin != null ? durMin * 60 : null;
+          if (d != null && (d < 0 || d > 4 * 3600)) throw new Error('Duration should be between 0 and 4 hours.');
+          row.duration_seconds = d; row.end_datetime = d != null ? new Date(new Date(s).getTime() + d * 1000).toISOString() : null;
+          row.left_duration_seconds = sides && left != null ? left * 60 : null; row.right_duration_seconds = sides && right != null ? right * 60 : null;
+          row.quantity_ml = null;
+        } else {
+          if (qty == null || qty <= 0) throw new Error('Please enter the quantity in ml.');
+          if (qty > 500) throw new Error('Quantity looks too large — please check (max 500 ml).');
+          row.quantity_ml = qty; row.duration_seconds = null; row.left_duration_seconds = null; row.right_duration_seconds = null;
+          if (end) { const e = fromLocalInput(end, tz); if (new Date(e) <= new Date(s)) throw new Error('End time must be after the start time.'); row.end_datetime = e; } else row.end_datetime = null;
+        }
+      }
+      const id = upsertEntry('feeds', row);
+      if (fromTimer) discardFeedTimer(baby.baby_id);
+      toast(existing ? 'Feed updated' : 'Feed saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('feeds', id) });
+      onDone();
+    } catch (e: any) { setErr(e.message); }
+  };
+
+  const typeOpts = [
+    { value: 'breast' as const, label: 'Breastfed', icon: <IBreast size={26} /> },
+    { value: 'expressed' as const, label: 'Expressed milk', icon: <IBottle size={26} /> },
+    { value: 'formula' as const, label: 'Formula', icon: <IFormula size={26} /> },
+  ].filter(o => allowed.includes(o.value));
+
+  return (
+    <Page title={existing ? 'Edit Feed' : 'Add Feed'} onCancel={onDone} className="form-page"
+      right={existing ? <button className="icon-btn danger" aria-label="Delete feed" onClick={() => { deleteEntry('feeds', existing.feed_id); toast('Feed deleted', { label: 'Undo', run: () => restoreEntry('feeds', existing.feed_id) }); onDone(); }}><ITrash /></button> : null}>
+      {typeOpts.length > 1 && <Segmented size="lg" label="Feeding type" value={type} onChange={v => { if (!timer) setType(v); }} options={typeOpts} />}
+
+      {type === 'breast' && !existing && (
+        <div className="card timer-card">
+          {!timer ? (
+            <>
+              <p className="muted small">Use the timer, or enter the details below.</p>
+              <div className="btn-row">
+                <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'left')}><IPlay size={16} /> Left</button>
+                <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'right')}><IPlay size={16} /> Right</button>
+                <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, null)}><IPlay size={16} /> Timer</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
+              <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
+              <Segmented label="Breast side" value={timer.side ?? 'none'} onChange={v => switchFeedSide(baby.baby_id, v === 'none' ? null : v as any)} options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }, { value: 'none', label: 'No side' }]} />
+              <div className="btn-row">
+                {timer.segment_started_at
+                  ? <button className="btn soft" onClick={() => pauseFeedTimer(baby.baby_id)}><IPause size={16} /> Pause</button>
+                  : <button className="btn soft" onClick={() => resumeFeedTimer(baby.baby_id)}><IPlay size={16} /> Resume</button>}
+                <button className="btn primary" onClick={() => save(true)}><IStop size={16} /> Stop & save</button>
+              </div>
+              <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) discardFeedTimer(baby.baby_id); }}>Discard timer</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {!timer && (
+        <>
+          <Field label="Start time"><input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
+          {type === 'breast' ? (
+            <>
+              <Field label="Duration" hint="(optional)">
+                <Stepper label="duration" value={durMin} onChange={v => { setSides(false); setDurMin(v); }} step={5} max={240} unit="min" />
+              </Field>
+              <button type="button" className="link small" onClick={() => setSides(!sides)}>{sides ? 'Hide left / right' : 'Add left / right durations'}</button>
+              {sides && (
+                <div className="two">
+                  <Field label="Left" hint="(optional)"><Stepper label="left duration" value={left} onChange={setLeft} unit="min" max={180} /></Field>
+                  <Field label="Right" hint="(optional)"><Stepper label="right duration" value={right} onChange={setRight} unit="min" max={180} /></Field>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <Field label="Quantity"><Stepper label="quantity" value={qty} onChange={setQty} step={10} max={500} unit="ml" /></Field>
+              <Field label="End time" hint="(optional)"><input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
+            </>
+          )}
+        </>
+      )}
+
+      <Field label="How was it?" hint="(optional)">
+        <div className="chips">{OBSERVATIONS.map(o => <Chip key={o} on={obs.includes(o)} onClick={() => setObs(obs.includes(o) ? obs.filter(x => x !== o) : [...obs, o])}>{o}</Chip>)}</div>
+      </Field>
+      <Field label="Notes" hint="(optional)"><textarea rows={3} placeholder="e.g. very hungry, fell asleep…" value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      {err && <div className="alert error" role="alert">{err}</div>}
+      {!timer && <button className="btn primary block" onClick={() => save(false)}>{existing ? 'Save changes' : 'Save Feed'}</button>}
+      <Wave tone="peach" />
+    </Page>
+  );
+}

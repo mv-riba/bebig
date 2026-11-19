@@ -1,0 +1,101 @@
+import React, { useMemo, useState, useEffect } from 'react';
+import { useBaby } from '../ui/hooks';
+import { useNav } from '../ui/nav';
+import { useNow, Empty, Row } from '../ui/ui';
+import { IBack, IChevron, ICalendar, IBottle, IPoo, IMoon, IChart, IPlus, IScale } from '../ui/icons';
+import { Timeline, buildTimeline, TItem } from '../ui/Timeline';
+import { dayStats } from '../lib/calc';
+import { todayKey, parseKey, daysInMonth, weekdayIndex, monthName, formatDateKey, formatDuration, pad, dateKey } from '../lib/time';
+import { toDisplay } from '../lib/growth';
+
+export function Calendar() {
+  const ctx = useBaby(); const nav = useNav(); const now = useNow(30000);
+  const tz = ctx?.baby.timezone ?? 'UTC';
+  const today = todayKey(tz);
+  // selection lives in navigation state so it survives opening an entry and coming back
+  const sel = nav.calendarKey ?? today;
+  const setSel = nav.selectDay;
+  const [view, setView] = useState(() => { const { y, m } = parseKey(sel); return { y, m }; });
+  useEffect(() => { const { y, m } = parseKey(sel); setView(v => (v.y === y && v.m === m ? v : { y, m })); }, [sel]);
+
+  const marks = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    if (!ctx) return m;
+    const add = (k: string, t: string) => { if (!m.has(k)) m.set(k, new Set()); m.get(k)!.add(t); };
+    ctx.data.feeds.forEach(f => add(dateKey(f.start_datetime, tz), 'feed'));
+    ctx.data.poos.forEach(p => add(dateKey(p.datetime, tz), 'poo'));
+    ctx.data.sleeps.forEach(s => add(dateKey(s.start_datetime, tz), 'sleep'));
+    ctx.growth.forEach(g => add(g.measurement_date, 'growth'));
+    return m;
+  }, [ctx, tz]);
+
+  if (!ctx) return null;
+  const { data, prefs, growth, baby } = ctx; const fmt = prefs.time_format;
+  const first = `${view.y}-${pad(view.m)}-01`;
+  const lead = weekdayIndex(first); const n = daysInMonth(view.y, view.m);
+  const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: n }, (_, i) => `${view.y}-${pad(view.m)}-${pad(i + 1)}`)];
+  while (cells.length % 7) cells.push(null);
+  const move = (d: number) => setView(v => { let m = v.m + d, y = v.y; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return { y, m }; });
+  const st = dayStats(data, sel, now);
+  const items = buildTimeline(st.feeds, st.poos, st.sleeps, 'asc');
+  const open = (i: TItem) => nav.push({ name: i.kind, entryId: (i.e as any)[i.kind === 'feed' ? 'feed_id' : i.kind === 'poo' ? 'poo_id' : 'sleep_id'] });
+  const meas = growth.filter(g => g.measurement_date === sel);
+  const future = sel > today; const beforeBirth = sel < baby.date_of_birth;
+
+  return (
+    <div className="screen calendar">
+      <header className="screen-head"><h1>Calendar</h1><button className="icon-btn" aria-label="Go to today" onClick={() => { setSel(today); const { y, m } = parseKey(today); setView({ y, m }); }}><ICalendar /></button></header>
+      <div className="card cal">
+        <div className="cal-nav">
+          <button className="icon-btn" aria-label="Previous month" onClick={() => move(-1)}><IBack /></button>
+          <strong aria-live="polite">{monthName(view.m)} {view.y}</strong>
+          <button className="icon-btn" aria-label="Next month" onClick={() => move(1)}><IChevron /></button>
+        </div>
+        <div className="cal-grid" role="grid" aria-label={`${monthName(view.m)} ${view.y}`}>
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <span key={d} className="cal-wd" aria-hidden="true">{d}</span>)}
+          {cells.map((k, i) => k ? (
+            <button key={k} role="gridcell" aria-selected={k === sel} aria-label={`${formatDateKey(k)}${marks.has(k) ? ', has records' : ''}`}
+              className={`cal-day ${k === sel ? 'sel' : ''} ${k === today ? 'today' : ''} ${k > today ? 'future' : ''}`} onClick={() => setSel(k)}>
+              <span>{Number(k.slice(8))}</span>
+              <span className="cal-dots">{['feed', 'poo', 'sleep', 'growth'].map(t => marks.get(k)?.has(t) ? <i key={t} className={`dot dot-${t}`} /> : null)}</span>
+            </button>
+          ) : <span key={'e' + i} />)}
+        </div>
+        {(view.y !== parseKey(today).y || view.m !== parseKey(today).m || sel !== today) && <button className="link small center-block" onClick={() => { setSel(today); const { y, m } = parseKey(today); setView({ y, m }); }}>Return to today</button>}
+      </div>
+
+      <div className="sec-head"><h2>{formatDateKey(sel)}</h2></div>
+      {future ? <Empty title="This day hasn’t happened yet" /> : (
+        <>
+          <div className="day-summary">
+            <div className="ds ds-feed"><IBottle size={20} /><strong>{st.feedCount}</strong><span>Feeds</span></div>
+            <div className="ds ds-poo"><IPoo size={20} /><strong>{st.pooCount}</strong><span>Poos</span></div>
+            <div className="ds ds-sleep"><IMoon size={20} /><strong>{st.sleepCount}</strong><span>Sleeps</span></div>
+            <div className="ds ds-total"><span className="ds-big">{formatDuration(st.sleepSeconds, true)}</span><span>Total sleep</span></div>
+          </div>
+          {(st.formulaMl > 0 || st.expressedMl > 0 || st.breastSeconds > 0) && (
+            <p className="muted small">{[st.breastCount && `Breastfeeding ${formatDuration(st.breastSeconds)} (${st.breastCount})`, st.formulaMl && `Formula ${st.formulaMl} ml`, st.expressedMl && `Expressed ${st.expressedMl} ml`].filter(Boolean).join(' · ')}{st.avgFeedIntervalMin ? ` · avg ${formatDuration(st.avgFeedIntervalMin * 60)} between feeds` : ''}</p>
+          )}
+          {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} /> : <Empty title="No activity recorded" text={beforeBirth ? undefined : 'Missed something? You can add it now.'} />}
+          {!beforeBirth && (
+            <div className="add-row" aria-label="Add entry for this day">
+              <button className="chip" onClick={() => nav.push({ name: 'feed', onKey: sel })}><IPlus size={14} /> Feed</button>
+              <button className="chip" onClick={() => nav.push({ name: 'poo', onKey: sel })}><IPlus size={14} /> Poo</button>
+              <button className="chip" onClick={() => nav.push({ name: 'sleep', onKey: sel })}><IPlus size={14} /> Sleep</button>
+              <button className="chip" onClick={() => nav.push({ name: 'measure', onKey: sel })}><IPlus size={14} /> Growth</button>
+            </div>
+          )}
+          {meas.length > 0 && (
+            <div className="card">
+              {meas.map(m => (
+                <Row key={m.measurement_id} icon={<IScale />} onClick={() => nav.push({ name: 'measure', id: m.measurement_id })}
+                  title="Growth measurement" sub={[toDisplay('weight', m) != null && `${toDisplay('weight', m)!.toFixed(2)} kg`, toDisplay('length', m) != null && `${toDisplay('length', m)!.toFixed(1)} cm long`, toDisplay('head', m) != null && `head ${toDisplay('head', m)!.toFixed(1)} cm`].filter(Boolean).join(' · ')} right={<IChevron />} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <button className="card row tap growth-link" onClick={() => nav.push({ name: 'growth' })}><span className="row-ic"><IChart /></span><span className="row-main"><span className="row-title">Growth charts</span><span className="row-sub">{growth.length ? `${growth.length} measurement${growth.length > 1 ? 's' : ''} recorded` : 'No measurements yet'}</span></span><IChevron /></button>
+    </div>
+  );
+}

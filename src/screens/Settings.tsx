@@ -1,0 +1,266 @@
+import React, { useState } from 'react';
+import { useBaby } from '../ui/hooks';
+import { useNav, Route } from '../ui/nav';
+import { Page, Row, Field, Segmented, useToast, Chip, useConfirm } from '../ui/ui';
+import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, IEdit, IBell } from '../ui/icons';
+import { BabyAvatar } from './Home';
+import {
+  useStore, updateBaby, inviteCaregiver, revokeAccess, setRole, updatePrefs, exportBaby, deleteBabyData, signOut, updateAccount,
+  deleteAccount, currentUserId, accessibleBabies, selectBaby,
+} from '../lib/store';
+import { formatDateKey, describeAge, daysBetween, todayKey, listTimezones } from '../lib/time';
+import { syncMode } from '../lib/sync';
+import { config } from '../lib/config';
+import type { FeedingPreference } from '../lib/types';
+
+const PREF_LABEL: Record<FeedingPreference, string> = { breast: 'Breastfed', formula: 'Formula fed', combination: 'Combination fed' };
+
+export function Settings() {
+  const ctx = useBaby(); const nav = useNav();
+  const members = useStore(s => ctx ? Object.values(s.access).filter(a => a.baby_id === ctx.baby.baby_id && a.invitation_status === 'accepted').length : 0);
+  const babies = useStore(s => accessibleBabies(s));
+  const me = useStore(s => s.users[currentUserId() ?? '']);
+  if (!ctx) return null;
+  const { baby, prefs } = ctx;
+  const go = (r: Route) => () => nav.push(r);
+  const age = daysBetween(baby.date_of_birth, todayKey(baby.timezone));
+  return (
+    <div className="screen settings">
+      <header className="screen-head"><span /><h1>Settings</h1><span /></header>
+      <button className="card profile-card" onClick={go({ name: 'profile' })}>
+        <BabyAvatar src={baby.photograph_url} name={baby.name} size={72} />
+        <span className="row-main"><span className="row-title big">{baby.name}</span><span className="row-sub">Born {formatDateKey(baby.date_of_birth, 'long')}<br />({describeAge(age)})</span></span>
+        <IChevron />
+      </button>
+      {babies.length > 1 && (
+        <div className="chips">{babies.map(b => <Chip key={b.baby_id} on={b.baby_id === baby.baby_id} onClick={() => selectBaby(b.baby_id)}>{b.name}</Chip>)}</div>
+      )}
+      <h2 className="sec-title">Baby profile</h2>
+      <div className="card kv" onClick={go({ name: 'profile' })} role="button" tabIndex={0}>
+        <div><span>Birth weight</span><strong>{baby.birth_weight_grams ? (baby.birth_weight_grams / 1000).toFixed(2) + ' kg' : '—'}</strong></div>
+        <div><span>Birth length</span><strong>{baby.birth_length_mm ? (baby.birth_length_mm / 10).toFixed(1) + ' cm' : '—'}</strong></div>
+        <div><span>Head circumference</span><strong>{baby.birth_head_circumference_mm ? (baby.birth_head_circumference_mm / 10).toFixed(1) + ' cm' : '—'}</strong></div>
+      </div>
+      <div className="card list">
+        <Row icon={<IBottle />} title="Feeding preferences" sub={PREF_LABEL[baby.feeding_preference]} onClick={go({ name: 'feeding-pref' })} right={<IChevron />} />
+        <Row icon={<IUsers />} title="Shared access" sub={`${members} member${members === 1 ? '' : 's'}`} onClick={go({ name: 'sharing' })} right={<IChevron />} />
+        <Row icon={<IChart />} title="Growth charts" onClick={go({ name: 'growth' })} right={<IChevron />} />
+        <Row icon={<IExport />} title="Data export & deletion" onClick={go({ name: 'data' })} right={<IChevron />} />
+        <Row icon={<ISliders />} title="App preferences" sub={`${prefs.time_format} · ${prefs.units}`} onClick={go({ name: 'prefs' })} right={<IChevron />} />
+        <Row icon={<IShield />} title="Privacy" onClick={go({ name: 'privacy' })} right={<IChevron />} />
+        <Row icon={<IEdit />} title="Account" sub={me?.email} onClick={go({ name: 'account' })} right={<IChevron />} />
+      </div>
+      <p className="muted tiny center">Bebig {config.version} · {syncMode() === 'local' ? 'Local mode: data is stored on this device only' : 'Cloud sync on'}</p>
+    </div>
+  );
+}
+
+export function ProfileEdit({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm();
+  const b = ctx!.baby;
+  const [f, setF] = useState({ name: b.name, date_of_birth: b.date_of_birth, time_of_birth: b.time_of_birth ?? '', sex: b.sex, timezone: b.timezone,
+    ga_w: b.gestational_age_weeks?.toString() ?? '', ga_d: b.gestational_age_days?.toString() ?? '',
+    bw: b.birth_weight_grams ? (b.birth_weight_grams / 1000).toString() : '', bl: b.birth_length_mm ? (b.birth_length_mm / 10).toString() : '', bh: b.birth_head_circumference_mm ? (b.birth_head_circumference_mm / 10).toString() : '' });
+  const [err, setErr] = useState<string | null>(null);
+  const set = (k: keyof typeof f) => (e: any) => setF({ ...f, [k]: e.target.value });
+  const num = (v: string) => v.trim() === '' ? null : Number(v.replace(',', '.'));
+  const onPhoto = (file?: File) => { if (!file) return; resizeImage(file).then(url => { updateBaby(b.baby_id, { photograph_url: url }); toast('Photo updated'); }); };
+  const save = async () => {
+    setErr(null);
+    if (!f.name.trim()) return setErr('Please enter a name.');
+    if (!f.date_of_birth || f.date_of_birth > todayKey(f.timezone)) return setErr('Please enter a valid date of birth.');
+    const gw = num(f.ga_w), gd = num(f.ga_d);
+    if (gw != null && (gw < 22 || gw > 44)) return setErr('Gestational age weeks should be between 22 and 44.');
+    if (gd != null && (gd < 0 || gd > 6)) return setErr('Gestational age days should be 0–6.');
+    const bw = num(f.bw), bl = num(f.bl), bh = num(f.bh);
+    if (bw != null && (bw < 0.3 || bw > 7)) return setErr('Birth weight should be in kg (e.g. 3.4).');
+    if (bl != null && (bl < 25 || bl > 65)) return setErr('Birth length should be in cm (e.g. 50).');
+    if (bh != null && (bh < 20 || bh > 45)) return setErr('Head circumference should be in cm (e.g. 34).');
+    if (f.timezone !== b.timezone && !(await confirm({ title: 'Change time zone?', text: 'All times and daily totals will be shown in the new zone. Recorded moments stay the same.', ok: 'Change' }))) return;
+    updateBaby(b.baby_id, { name: f.name.trim(), date_of_birth: f.date_of_birth, time_of_birth: f.time_of_birth || null, sex: f.sex, timezone: f.timezone,
+      gestational_age_weeks: gw, gestational_age_days: gw != null ? gd ?? 0 : null, birth_weight_grams: bw != null ? Math.round(bw * 1000) : null,
+      birth_length_mm: bl != null ? Math.round(bl * 10) : null, birth_head_circumference_mm: bh != null ? Math.round(bh * 10) : null });
+    toast('Profile saved'); onBack();
+  };
+  return (
+    <Page title="Baby profile" onBack={onBack}>
+      <div className="photo-edit">
+        <BabyAvatar src={b.photograph_url} name={b.name} size={96} />
+        <label className="btn soft small">Change photo<input type="file" accept="image/*" hidden onChange={e => onPhoto(e.target.files?.[0])} /></label>
+        {b.photograph_url && <button className="link small" onClick={() => updateBaby(b.baby_id, { photograph_url: null })}>Remove</button>}
+      </div>
+      <Field label="Name"><input value={f.name} onChange={set('name')} /></Field>
+      <div className="two"><Field label="Date of birth"><input type="date" value={f.date_of_birth} onChange={set('date_of_birth')} /></Field><Field label="Time of birth" hint="(optional)"><input type="time" value={f.time_of_birth} onChange={set('time_of_birth')} /></Field></div>
+      <Field label="Sex" hint="(used for WHO growth references)"><Segmented label="Sex" value={f.sex} onChange={v => setF({ ...f, sex: v })} options={[{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }]} /></Field>
+      <Field label="Time zone"><TzSelect value={f.timezone} onChange={v => setF({ ...f, timezone: v })} /></Field>
+      <Field label="Gestational age at birth" hint="(optional)"><div className="two"><input inputMode="numeric" placeholder="weeks" value={f.ga_w} onChange={set('ga_w')} aria-label="weeks" /><input inputMode="numeric" placeholder="days" value={f.ga_d} onChange={set('ga_d')} aria-label="days" /></div></Field>
+      <div className="three">
+        <Field label="Birth weight (kg)"><input inputMode="decimal" value={f.bw} onChange={set('bw')} /></Field>
+        <Field label="Length (cm)"><input inputMode="decimal" value={f.bl} onChange={set('bl')} /></Field>
+        <Field label="Head (cm)"><input inputMode="decimal" value={f.bh} onChange={set('bh')} /></Field>
+      </div>
+      {err && <div className="alert error" role="alert">{err}</div>}
+      <button className="btn primary block" onClick={save}>Save</button>
+    </Page>
+  );
+}
+
+export function TzSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const zones = listTimezones();
+  return <select value={value} onChange={e => onChange(e.target.value)}>{(zones.includes(value) ? zones : [value, ...zones]).map(z => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}</select>;
+}
+
+export function resizeImage(file: File, max = 512): Promise<string> {
+  return new Promise((res, rej) => {
+    const img = new Image(); const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg', 0.82)); // re-encoding strips EXIF metadata (location etc.)
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
+
+export function FeedingPrefPage({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const toast = useToast();
+  const b = ctx!.baby;
+  const opts: { v: FeedingPreference; t: string; d: string }[] = [
+    { v: 'breast', t: 'Breastfed', d: 'Direct breastfeeding, optional duration and left/right tracking.' },
+    { v: 'formula', t: 'Formula fed', d: 'Bottle feeds with quantity in ml.' },
+    { v: 'combination', t: 'Combination fed', d: 'Choose breastfeeding, expressed milk or formula for each feed.' },
+  ];
+  return (
+    <Page title="Feeding preferences" onBack={onBack}>
+      <div className="card list">{opts.map(o => (
+        <button key={o.v} className={`row tap ${b.feeding_preference === o.v ? 'row-on' : ''}`} role="radio" aria-checked={b.feeding_preference === o.v} onClick={() => { updateBaby(b.baby_id, { feeding_preference: o.v }); toast('Feeding preference updated'); }}>
+          <span className="radio" aria-hidden="true" /><span className="row-main"><span className="row-title">{o.t}</span><span className="row-sub">{o.d}</span></span>
+        </button>))}</div>
+      <p className="muted small">Changing this only affects new entries. Past feeds keep their original type.</p>
+    </Page>
+  );
+}
+
+export function SharingPage({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm();
+  const b = ctx!.baby; const isOwner = ctx!.role === 'owner';
+  const rows = useStore(s => Object.values(s.access).filter(a => a.baby_id === b.baby_id && a.invitation_status !== 'declined'));
+  const users = useStore(s => s.users);
+  const [email, setEmail] = useState(''); const [err, setErr] = useState<string | null>(null);
+  const invite = () => { setErr(null); try { inviteCaregiver(b.baby_id, email); setEmail(''); toast('Invitation created'); } catch (e: any) { setErr(e.message); } };
+  const active = rows.filter(r => r.invitation_status === 'accepted'), pending = rows.filter(r => r.invitation_status === 'pending'), revoked = rows.filter(r => r.invitation_status === 'revoked');
+  return (
+    <Page title="Shared access" onBack={onBack}>
+      <h2 className="sec-title">Members</h2>
+      <div className="card list">{active.map(a => (
+        <Row key={a.access_id} icon={<span className="avatar avatar-ph sm">{(users[a.user_id!]?.display_name ?? a.invited_email)[0].toUpperCase()}</span>}
+          title={users[a.user_id!]?.display_name ?? a.invited_email} sub={`${a.invited_email} · ${a.role === 'owner' ? 'Owner' : 'Caregiver'}`}
+          right={isOwner && a.role !== 'owner' ? <button className="btn soft small danger" onClick={async () => { if (await confirm({ title: 'Revoke access?', text: `${a.invited_email} will no longer see ${b.name}’s records.`, ok: 'Revoke', danger: true })) { revokeAccess(a.access_id); toast('Access revoked'); } }}>Revoke</button> : null} />
+      ))}</div>
+      {pending.length > 0 && <><h2 className="sec-title">Pending invitations</h2><div className="card list">{pending.map(a => (
+        <Row key={a.access_id} title={a.invited_email} sub="Waiting for them to sign in and accept" right={isOwner ? <button className="btn soft small" onClick={() => revokeAccess(a.access_id)}>Cancel</button> : null} />
+      ))}</div></>}
+      {isOwner ? (
+        <>
+          <h2 className="sec-title">Invite a parent or caregiver</h2>
+          <Field label="Email address"><input type="email" autoComplete="email" placeholder="partner@example.com" value={email} onChange={e => setEmail(e.target.value)} /></Field>
+          {err && <div className="alert error">{err}</div>}
+          <button className="btn primary block" onClick={invite} disabled={!email}>Send invitation</button>
+          <p className="muted small">Caregivers can view, add and edit activity and measurements. Only you (the owner) can manage access or delete the profile. They’ll see the invitation after signing in with this email{syncMode() === 'local' ? ' — in local mode, on this device (try a second browser tab)' : ''}.</p>
+        </>
+      ) : <p className="muted small">Only the profile owner can invite or remove people.</p>}
+      {revoked.length > 0 && <p className="muted tiny">Previously removed: {revoked.map(r => r.invited_email).join(', ')}</p>}
+    </Page>
+  );
+}
+
+export function PrefsPage({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const p = ctx!.prefs; const b = ctx!.baby; const toast = useToast(); const confirm = useConfirm();
+  const setN = async (k: 'feeding' | 'sleep' | 'custom', v: boolean) => {
+    if (v && 'Notification' in window && Notification.permission !== 'granted') {
+      const r = await Notification.requestPermission();
+      if (r !== 'granted') { toast('Notifications are blocked in your browser settings'); return; }
+    }
+    updatePrefs({ notifications: { ...p.notifications, [k]: v } });
+  };
+  return (
+    <Page title="App preferences" onBack={onBack}>
+      <Field label="Time format"><Segmented label="Time format" value={p.time_format} onChange={v => updatePrefs({ time_format: v })} options={[{ value: '24h', label: '24-hour' }, { value: '12h', label: '12-hour' }]} /></Field>
+      <Field label="Units for measurements"><Segmented label="Units" value={p.units} onChange={v => updatePrefs({ units: v })} options={[{ value: 'metric', label: 'Metric (kg, cm)' }, { value: 'imperial', label: 'Imperial (lb, in)' }]} /></Field>
+      <Field label="Baby’s time zone" hint="(all times use this)"><TzSelect value={b.timezone} onChange={async v => { if (await confirm({ title: 'Change time zone?', text: 'All times and daily totals will be shown in the new zone. Recorded moments are not changed.', ok: 'Change' })) updateBaby(b.baby_id, { timezone: v }); }} /></Field>
+      <Field label="Language"><select value="en" disabled><option value="en">English</option></select></Field>
+      <h2 className="sec-title"><IBell size={18} /> Reminders</h2>
+      <p className="muted small">Off by default. Reminders appear while Bebig is open or installed on your home screen. They’re simple timers — never feeding or medical advice.</p>
+      <div className="card list">
+        <label className="row"><span className="row-main"><span className="row-title">Feeding reminder</span><span className="row-sub">After the last feed</span></span>
+          <select aria-label="Feeding reminder interval" value={p.notifications.feeding_interval_min} onChange={e => updatePrefs({ notifications: { ...p.notifications, feeding_interval_min: Number(e.target.value) } })}>{[120, 150, 180, 210, 240].map(m => <option key={m} value={m}>{m / 60} h</option>)}</select>
+          <input type="checkbox" className="switch" checked={p.notifications.feeding} onChange={e => setN('feeding', e.target.checked)} /></label>
+        <label className="row"><span className="row-main"><span className="row-title">Sleep timer reminder</span><span className="row-sub">If a sleep timer has run for 4+ hours</span></span><input type="checkbox" className="switch" checked={p.notifications.sleep} onChange={e => setN('sleep', e.target.checked)} /></label>
+      </div>
+    </Page>
+  );
+}
+
+function download(name: string, text: string, type: string) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const csv = (rows: any[]) => { if (!rows.length) return ''; const keys = Object.keys(rows[0]); const esc = (v: any) => v == null ? '' : /[",\n]/.test(String(typeof v === 'object' ? JSON.stringify(v) : v)) ? `"${String(typeof v === 'object' ? JSON.stringify(v) : v).replace(/"/g, '""')}"` : String(v); return [keys.join(','), ...rows.map(r => keys.map(k => esc(r[k])).join(','))].join('\n'); };
+
+export function DataPage({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const b = ctx!.baby;
+  const slug = b.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  return (
+    <Page title="Data" onBack={onBack}>
+      <h2 className="sec-title">Export</h2>
+      <p className="muted small">Download all of {b.name}’s records. Times are stored in UTC with the profile’s time zone included.</p>
+      <div className="btn-row">
+        <button className="btn soft" onClick={() => { download(`bebig-${slug}.json`, JSON.stringify(exportBaby(b.baby_id), null, 2), 'application/json'); toast('Export downloaded'); }}>Export JSON</button>
+        <button className="btn soft" onClick={() => { const e = exportBaby(b.baby_id); for (const [k, rows] of Object.entries({ feeds: e.feeding_entries, poos: e.poo_entries, sleeps: e.sleep_entries, growth: e.growth_measurements })) if ((rows as any[]).length) download(`bebig-${slug}-${k}.csv`, csv(rows as any[]), 'text/csv'); toast('CSV files downloaded'); }}>Export CSV</button>
+      </div>
+      <h2 className="sec-title">Delete</h2>
+      {ctx!.role === 'owner' ? (
+        <>
+          <p className="muted small">Permanently deletes {b.name}’s profile and all records for every member. This can’t be undone — export first if you want a copy.</p>
+          <button className="btn danger block" onClick={async () => { if (await confirm({ title: `Delete all of ${b.name}’s data?`, text: 'This permanently removes the profile and every record for all members.', ok: 'Delete everything', danger: true, typeWord: 'DELETE' })) { deleteBabyData(b.baby_id); toast('All data deleted'); } }}><ITrash size={16} /> Delete all baby data</button>
+        </>
+      ) : <p className="muted small">Only the profile owner can delete the baby’s data. You can ask them, or leave the profile from Shared access.</p>}
+    </Page>
+  );
+}
+
+export function PrivacyPage({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const p = ctx!.prefs;
+  return (
+    <Page title="Privacy" onBack={onBack}>
+      <div className="prose">
+        <p><strong>Your baby’s records are sensitive.</strong> Bebig treats them as health-related personal data.</p>
+        <ul>
+          <li>Only people you invite and who accept can see a baby profile. Access is enforced by the database, not just the app.</li>
+          <li>Data is encrypted in transit (HTTPS) and at rest. We prefer EU hosting.</li>
+          <li>Records are never shared with advertising networks and never sold.</li>
+          <li>The AI assistant only reads records for the selected baby, and only for people with access.</li>
+          <li>Records are not used to train third-party AI models.</li>
+          <li>You can export or delete your data at any time (Settings → Data).</li>
+        </ul>
+        <p className="muted small">{syncMode() === 'local' ? 'You’re in local mode: everything stays in this browser on this device. Clearing browser data removes it.' : 'Cloud sync is on.'}</p>
+        <p className="muted small">The full privacy policy, lawful basis and retention periods will be published before public release (GDPR review pending).</p>
+      </div>
+      <label className="row card"><span className="row-main"><span className="row-title">Allow AI phrasing by our server-side model</span><span className="row-sub">Numbers are always calculated from your records. Off by default.</span></span><input type="checkbox" className="switch" checked={p.ai_consent} onChange={e => updatePrefs({ ai_consent: e.target.checked })} /></label>
+    </Page>
+  );
+}
+
+export function AccountPage({ onBack }: { onBack: () => void }) {
+  const me = useStore(s => s.users[currentUserId() ?? '']); const toast = useToast(); const confirm = useConfirm();
+  const [name, setName] = useState(me?.display_name ?? '');
+  if (!me) return null;
+  return (
+    <Page title="Account" onBack={onBack}>
+      <Field label="Your name"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() && name !== me.display_name) { updateAccount({ display_name: name.trim() }); toast('Name updated'); } }} /></Field>
+      <Field label="Email"><input value={me.email} disabled /></Field>
+      <button className="btn soft block" onClick={() => signOut()}>Sign out</button>
+      <button className="btn danger block" onClick={async () => { if (await confirm({ title: 'Delete your account?', text: 'Baby profiles you own will also be deleted for everyone.', ok: 'Delete account', danger: true, typeWord: 'DELETE' })) await deleteAccount(); }}>Delete account</button>
+    </Page>
+  );
+}

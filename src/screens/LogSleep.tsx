@@ -1,0 +1,100 @@
+import React, { useState } from 'react';
+import { Page, Segmented, Field, useToast, useNow, Wave, useConfirm } from '../ui/ui';
+import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IChevron, IMoon } from '../ui/icons';
+import { useBaby } from '../ui/hooks';
+import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, sleepElapsed, getState, live } from '../lib/store';
+import { toLocalInput, fromLocalInput, formatClock, formatTime, formatDuration, dateKey } from '../lib/time';
+import type { SleepEntry } from '../lib/types';
+import { defaultTime } from './LogFeed';
+
+function Ring({ fraction, children }: { fraction: number; children: React.ReactNode }) {
+  const r = 96, c = 2 * Math.PI * r;
+  return (
+    <div className="ring">
+      <svg viewBox="0 0 220 220" aria-hidden="true">
+        <circle cx="110" cy="110" r={r} className="ring-bg" />
+        <circle cx="110" cy="110" r={r} className="ring-fg" strokeDasharray={c} strokeDashoffset={c * (1 - fraction)} transform="rotate(-90 110 110)" />
+      </svg>
+      <div className="ring-inner">{children}</div>
+    </div>
+  );
+}
+
+export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
+  const ctx = useBaby(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
+  const existing: SleepEntry | undefined = entryId ? getState().sleeps[entryId] : undefined;
+  const tz = ctx?.baby.timezone ?? 'UTC';
+  const [mode, setMode] = useState<'timer' | 'manual'>(existing || onKey ? 'manual' : 'timer');
+  const defStart = existing?.start_datetime ?? new Date(new Date(defaultTime(tz, onKey)).getTime() - 3600000).toISOString();
+  const [start, setStart] = useState(toLocalInput(defStart, tz));
+  const [end, setEnd] = useState(toLocalInput(existing?.end_datetime ?? defaultTime(tz, onKey), tz));
+  const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [err, setErr] = useState<string | null>(null);
+  if (!ctx) return null;
+  const { baby, active, prefs } = ctx;
+  const editingActive = existing && existing.status !== 'completed';
+
+  const saveManual = async () => {
+    setErr(null);
+    const s = fromLocalInput(start, tz), e = fromLocalInput(end, tz);
+    if (new Date(e) <= new Date(s)) return setErr('End time must be after the start time.');
+    if (new Date(e).getTime() > Date.now() + 5 * 60000) return setErr('End time can’t be in the future. Use the timer for an ongoing sleep.');
+    if (new Date(e).getTime() - new Date(s).getTime() > 16 * 3600000) return setErr('That’s longer than 16 hours — please check the times.');
+    const overlap = live(getState().sleeps, baby.baby_id).find(x => x.sleep_id !== existing?.sleep_id && x.end_datetime && new Date(x.start_datetime) < new Date(e) && new Date(x.end_datetime) > new Date(s));
+    if (overlap && !(await confirm({ title: 'Overlapping sleep', text: `This overlaps another sleep (${formatTime(overlap.start_datetime, tz, prefs.time_format)}–${formatTime(overlap.end_datetime!, tz, prefs.time_format)}). Save anyway?`, ok: 'Save anyway' }))) return;
+    const pauses = existing?.status === 'completed' ? (existing.pauses || []).filter(p => p.end && new Date(p.start) >= new Date(s) && new Date(p.end) <= new Date(e)) : [];
+    const row: Partial<SleepEntry> = { ...(existing ? { sleep_id: existing.sleep_id } : {}), baby_id: baby.baby_id, start_datetime: s, end_datetime: e, status: 'completed', pauses, notes: notes.trim() || null };
+    row.duration_seconds = Math.round(sleepElapsed(row as SleepEntry));
+    const id = upsertEntry('sleeps', row);
+    toast(existing ? 'Sleep updated' : 'Sleep saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('sleeps', id) });
+    onDone();
+  };
+
+  const timerView = () => {
+    const a = active;
+    if (!a) return (
+      <div className="sleep-start">
+        <Ring fraction={0}><IBed size={34} /><div className="timer-big">0:00</div><div className="muted small">Ready when baby falls asleep</div></Ring>
+        <button className="btn primary block" onClick={() => { startSleep(baby.baby_id); toast('Sleep timer started'); }}><IPlay size={16} /> Start sleep</button>
+      </div>
+    );
+    const el = sleepElapsed(a, now);
+    return (
+      <div className="sleep-start">
+        <Ring fraction={(el % 3600) / 3600 || 0.002}>
+          <IBed size={34} />
+          <div className="timer-big">{formatClock(el)}</div>
+          <div className="muted small">{a.status === 'paused' ? 'Paused' : 'Since sleep started'} · {formatTime(a.start_datetime, tz, prefs.time_format)}</div>
+        </Ring>
+        <div className="btn-row">
+          {a.status === 'paused'
+            ? <button className="btn soft" onClick={() => resumeSleep(a)}><IPlay size={16} /> Resume</button>
+            : <button className="btn soft" onClick={() => pauseSleep(a)}><IPause size={16} /> Pause</button>}
+          <button className="btn soft" onClick={() => { const d = stopSleep(a); toast(`Sleep saved · ${formatDuration(d.duration_seconds || 0)}`); onDone(); }}><IStop size={16} /> Stop</button>
+        </div>
+        <p className="muted small center">Paused time doesn’t count as sleep. If baby woke properly, stop and start a new session — interruptions are kept as separate sleeps.</p>
+        <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this sleep timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) { deleteEntry('sleeps', a.sleep_id); onDone(); } }}>Discard timer</button>
+      </div>
+    );
+  };
+
+  return (
+    <Page title={existing ? 'Edit Sleep' : 'Add Sleep'} onCancel={onDone} className="form-page"
+      right={existing && !editingActive ? <button className="icon-btn danger" aria-label="Delete sleep" onClick={() => { deleteEntry('sleeps', existing.sleep_id); toast('Sleep deleted', { label: 'Undo', run: () => restoreEntry('sleeps', existing.sleep_id) }); onDone(); }}><ITrash /></button> : null}>
+      {!existing && <Segmented size="lg" label="Logging method" value={mode} onChange={setMode} options={[{ value: 'timer', label: 'Timer', icon: <ITimer size={26} /> }, { value: 'manual', label: 'Manual', icon: <ICalendar size={26} /> }]} />}
+      {(mode === 'timer' && !existing) || editingActive ? timerView() : (
+        <>
+          <Field label="Fell asleep"><input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
+          <Field label="Woke up"><input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
+          {(() => { try { const s = new Date(fromLocalInput(start, tz)), e = new Date(fromLocalInput(end, tz)); return e > s ? <p className="muted">Duration: <strong>{formatDuration((e.getTime() - s.getTime()) / 1000)}</strong>{dateKey(s, tz) !== dateKey(e, tz) ? ' · crosses midnight' : ''}</p> : null; } catch { return null; } })()}
+          <Field label="Notes" hint="(optional)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+          {err && <div className="alert error" role="alert">{err}</div>}
+          <button className="btn primary block" onClick={saveManual}>{existing ? 'Save changes' : 'Save Sleep'}</button>
+        </>
+      )}
+      {mode === 'timer' && !existing && !active && <><div className="or">or</div><button className="row tap card" onClick={() => setMode('manual')}><span className="row-ic"><ICalendar /></span><span className="row-main"><span className="row-title">Enter manually</span></span><IChevron /></button></>}
+      <div className="moon-deco" aria-hidden="true"><IMoon size={56} /></div>
+      <Wave tone="lav" />
+    </Page>
+  );
+}

@@ -1,0 +1,47 @@
+// Build: bundles src/ into dist/ with esbuild. `node build.mjs` (production) or `node build.mjs --serve` (dev server on :5173).
+// Env: BEBIG_SUPABASE_URL, BEBIG_SUPABASE_ANON_KEY (optional — omit for local-only mode).
+import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
+const require = createRequire(import.meta.url);
+let esbuild;
+try { esbuild = require('esbuild'); } catch { esbuild = require('/opt/npm-tools/node_modules/esbuild'); }
+
+const serve = process.argv.includes('--serve');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const version = pkg.version + (serve ? '-dev' : '');
+const out = 'dist';
+fs.rmSync(out, { recursive: true, force: true });
+fs.mkdirSync(out, { recursive: true });
+fs.cpSync('public', out, { recursive: true });
+
+const opts = {
+  entryPoints: ['src/main.tsx'], bundle: true, outdir: out, entryNames: serve ? 'app' : 'app-[hash]', format: 'esm', target: ['es2020', 'safari15'],
+  minify: !serve, sourcemap: serve ? 'inline' : false, jsx: 'automatic', loader: { '.json': 'json' }, metafile: true,
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(serve ? 'development' : 'production'),
+    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: process.env.BEBIG_SUPABASE_URL || '', supabaseAnonKey: process.env.BEBIG_SUPABASE_ANON_KEY || '', version }),
+  },
+};
+
+function writeHtml(meta) {
+  const outputs = Object.keys(meta.outputs).map(p => path.basename(p));
+  const js = outputs.find(f => f.endsWith('.js')), css = outputs.find(f => f.endsWith('.css'));
+  const html = fs.readFileSync('index.html', 'utf8').replace('<!--CSS-->', css ? `<link rel="stylesheet" href="./${css}">` : '').replace('<!--JS-->', `<script type="module" src="./${js}"></script>`);
+  fs.writeFileSync(path.join(out, 'index.html'), html);
+  // service worker precache list + versioned cache name
+  const sw = fs.readFileSync(path.join(out, 'sw.js'), 'utf8').replace('__VERSION__', version + '-' + Date.now()).replace('__ASSETS__', JSON.stringify(['/', '/index.html', `/${js}`, css && `/${css}`, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'].filter(Boolean)));
+  fs.writeFileSync(path.join(out, 'sw.js'), sw);
+}
+
+if (serve) {
+  const ctx = await esbuild.context({ ...opts, plugins: [{ name: 'html', setup(b) { b.onEnd(r => r.metafile && writeHtml(r.metafile)); } }] });
+  await ctx.watch();
+  const { port } = await ctx.serve({ servedir: out, port: 5173, fallback: path.join(out, 'index.html') });
+  console.log(`Bebig dev server: http://localhost:${port}`);
+} else {
+  const r = await esbuild.build(opts);
+  writeHtml(r.metafile);
+  const size = Object.entries(r.metafile.outputs).map(([f, o]) => `${path.basename(f)} ${(o.bytes / 1024).toFixed(1)} kB`).join(', ');
+  console.log('Built dist/:', size);
+}
