@@ -24,7 +24,7 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 ];
 
 function Shell() {
-  const [tab, setTabState] = useState<Tab>(() => (location.hash.slice(1) as Tab) || 'home');
+  const [tab, setTabState] = useState<Tab>(() => { const h = location.hash.replace('#tab-', ''); return (['home', 'calendar', 'insights', 'assistant', 'settings'].includes(h) ? h : 'home') as Tab; });
   const [stack, setStack] = useState<Route[]>([]);
   const [calendarKey, setCalendarKey] = useState<string | null>(null);
   useReminders();
@@ -37,7 +37,7 @@ function Shell() {
   }, []);
   const push = useCallback((r: Route) => { history.pushState({ r: true }, ''); setStack(s => [...s, r]); window.scrollTo(0, 0); }, []);
   const pop = useCallback(() => { history.back(); }, []);
-  const setTab = useCallback((t: Tab) => { setTabState(t); history.replaceState(null, '', '#' + t); window.scrollTo(0, 0); }, []);
+  const setTab = useCallback((t: Tab) => { setTabState(t); history.replaceState(history.state, '', '#tab-' + t); window.scrollTo(0, 0); }, []);
   const openDay = useCallback((k: string) => { setCalendarKey(k); setTab('calendar'); }, [setTab]);
 
   const top = stack[stack.length - 1];
