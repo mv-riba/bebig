@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, type Table } from './store';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -75,9 +75,9 @@ async function push() {
         setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); }, false);
       } catch (e: any) {
         if (e.status && e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 408 && e.status !== 429) {
-          // permanent rejection (validation / permission): drop op so the queue isn't blocked; log for audit
+          // rejected (validation / permission): park it so the queue isn't blocked, keep it for retry and tell the user
           console.warn('Sync rejected', op, e);
-          setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); s.audit.push({ at: new Date().toISOString(), user_id: me || '', action: 'sync.rejected', detail: `${op.table}: ${e.message}` }); }, false);
+          setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); s.syncFailed = [...(s.syncFailed || []), { ...op, error: e.message, failed_at: new Date().toISOString() }].slice(-200); s.audit.push({ at: new Date().toISOString(), user_id: me || '', action: 'sync.rejected', detail: `${op.table}: ${e.message}` }); }, false);
         } else throw e;
       }
     }
@@ -103,7 +103,7 @@ async function pull() {
   localStorage.setItem(cursorKey, JSON.stringify(cursors));
   setState(s => {
     for (const p of profiles) s.users[p.user_id] = { ...s.users[p.user_id], ...p };
-    const pendingIds = new Set(s.outbox.map(o => o.row[REMOTE[o.table].id]));
+    const pendingIds = new Set([...s.outbox, ...(s.syncFailed || [])].map(o => o.row[REMOTE[o.table].id]));
     for (const t of Object.keys(results) as Table[]) {
       const idf = REMOTE[t].id; const target = s[t] as Record<string, any>;
       for (const r of results[t]!) {
@@ -122,7 +122,8 @@ async function pull() {
       if (dup) delete s.access[a.access_id];
     }
     // remove babies we can no longer see (revoked / deleted elsewhere)
-    for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id)) {
+    // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
+    for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) {
       delete s.babies[id];
       for (const t of ['feeds', 'poos', 'sleeps', 'growth'] as const) for (const [k, v] of Object.entries(s[t] as any)) if ((v as any).baby_id === id) delete (s[t] as any)[k];
       for (const a of Object.values(s.access)) if (a.baby_id === id && a.user_id === me) delete s.access[a.access_id];
@@ -132,7 +133,7 @@ async function pull() {
 }
 
 let timer: any = null;
-async function cycle() { try { await push(); await pull(); await push(); } catch (e) { console.warn('sync', e); } }
+async function cycle() { try { await push(); await pull(); setInitialPullDone(true); await push(); } catch (e) { console.warn('sync', e); if (!navigator.onLine) setInitialPullDone(true); } }
 export function startRemoteSync() {
   setRemoteAuth({
     async register(email, password, display_name) {
@@ -148,7 +149,7 @@ export function startRemoteSync() {
     async signOut() { try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name }, 'return=minimal'); },
-    onSignedIn() { for (const k of Object.keys(cursors)) delete cursors[k]; cycle(); },
+    onSignedIn() { setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); },
   });
   // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
@@ -181,7 +182,7 @@ export function startRemoteSync() {
   void orig;
   setInterval(() => { if (getState().outbox.length && !pushing) { clearTimeout(debounce); debounce = setTimeout(push, 300); } }, 1000);
   timer = setInterval(kick, 15000);
-  if (auth) kick();
+  if (auth) { if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
   return () => clearInterval(timer);
 }
 

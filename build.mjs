@@ -13,7 +13,7 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const cfg = fs.existsSync('bebig.config.json') ? JSON.parse(fs.readFileSync('bebig.config.json', 'utf8')) : {};
 const supabaseUrl = process.env.BEBIG_SUPABASE_URL || cfg.supabaseUrl || '';
 const supabaseAnonKey = process.env.BEBIG_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || '';
-const remote = !serve && supabaseUrl && supabaseAnonKey;
+const remote = !serve && !process.env.BEBIG_LOCAL && supabaseUrl && supabaseAnonKey;
 const version = pkg.version + (serve ? '-dev' : '');
 const out = 'dist';
 fs.rmSync(out, { recursive: true, force: true });

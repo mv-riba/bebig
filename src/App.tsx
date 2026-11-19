@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useStore, currentUserId, selectedBaby } from './lib/store';
+import { useStore, currentUserId, selectedBaby, isRemote, isInitialPullDone } from './lib/store';
+import { Logo } from './screens/Auth';
 import { NavCtx, Tab, Route } from './ui/nav';
 import { ToastProvider, ConfirmProvider } from './ui/ui';
 import { IHome, ICalendar, IInsights, IChat, ISettings } from './ui/icons';
@@ -88,9 +89,10 @@ function Shell() {
 export function App() {
   const uid = useStore(() => currentUserId());
   const hasBaby = useStore(s => !!selectedBaby(s));
+  const loading = useStore(() => isRemote() && !isInitialPullDone());
   return (
     <ToastProvider><ConfirmProvider>
-      {!uid ? <AuthScreen /> : !hasBaby ? <Onboarding /> : <Shell />}
+      {!uid ? <AuthScreen /> : !hasBaby && loading ? <div className="auth"><div className="auth-brand"><Logo size={64} /><h1>Bebig</h1><p className="muted">Loading your baby’s profile…</p></div></div> : !hasBaby ? <Onboarding /> : <Shell />}
     </ConfirmProvider></ToastProvider>
   );
 }

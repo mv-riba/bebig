@@ -33,6 +33,7 @@ export interface State {
   selectedBaby: Record<string, string>; // user_id -> baby_id
   chats: Record<string, ChatMessage[]>; // `${user}:${baby}`
   outbox: OutboxOp[];
+  syncFailed: (OutboxOp & { error: string; failed_at: string })[]; // rejected by the server; kept for retry, never silently lost
   audit: AuditEvent[];
   lastSyncedAt: string | null;
 }
@@ -51,7 +52,7 @@ export const defaultPrefs = (): UserPrefs => ({
 function empty(): State {
   return {
     version: 1, session: null, users: {}, credentials: {}, babies: {}, access: {}, feeds: {}, poos: {}, sleeps: {},
-    growth: {}, feedTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], audit: [], lastSyncedAt: null,
+    growth: {}, feedTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null,
   };
 }
 
@@ -442,3 +443,14 @@ export function exportBaby(baby_id: string) {
 }
 
 export function resetAll() { localStorage.removeItem(KEY); sessionStorage.removeItem('bebig:session'); state = empty(); session = null; emit(); channel?.postMessage({ type: 'changed' }); }
+
+/** Move changes the server rejected back into the outbox (e.g. after a server-side fix). */
+export function retryFailedSync() {
+  setState(s => { s.outbox = [...(s.syncFailed || []).map(({ error, failed_at, ...op }) => op), ...s.outbox]; s.syncFailed = []; }, false);
+}
+
+// Whether the first server pull after sign-in has finished (not persisted). Until then a signed-in user with no
+// baby on this device is shown a loading state rather than onboarding, to avoid creating a duplicate profile.
+let initialPullDone = false;
+export function setInitialPullDone(v: boolean) { if (initialPullDone !== v) { initialPullDone = v; setState(() => {}, false); } }
+export const isInitialPullDone = () => initialPullDone;
