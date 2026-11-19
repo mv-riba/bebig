@@ -19,6 +19,13 @@ const out = 'dist';
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 fs.cpSync('public', out, { recursive: true });
+// PNG app icons are rendered from public/icon.svg at build time (keeps the repo text-only)
+for (const size of [192, 512]) {
+  const dest = path.join(out, `icon-${size}.png`);
+  if (fs.existsSync(dest)) continue;
+  try { const sharp = require('sharp'); await sharp(fs.readFileSync('public/icon.svg')).resize(size, size).png().toFile(dest); }
+  catch { console.warn(`(icon-${size}.png not generated: install sharp)`); }
+}
 
 const opts = {
   entryPoints: ['src/main.tsx'], bundle: true, outdir: out, entryNames: serve ? 'app' : 'app-[hash]', format: 'esm', target: ['es2020', 'safari15'],
