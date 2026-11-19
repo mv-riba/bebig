@@ -124,7 +124,7 @@ export function GrowthCharts({ onBack }: { onBack: () => void }) {
             {sel.created_by && <span className="muted tiny">Entered by {users[sel.created_by]?.display_name ?? '—'}</span>}</div>
         </div>
       ) : null}
-      {withV.length ? <Chart ind={ind} onPick={setPicked} picked={sel?.measurement_id ?? null} /> : <Empty icon={<IScale size={30} />} title={`No ${LABEL[ind].toLowerCase()} measurements yet`} text="Add measurements from your healthcare visits to see them on the chart." action={<button className="btn primary" onClick={() => nav.push({ name: 'measure' })}>Add measurement</button>} />}
+      {withV.length ? <Chart ind={ind} onPick={setPicked} picked={sel?.measurement_id ?? null} /> : <Empty icon={<IScale size={30} />} title={`No ${LABEL[ind].toLowerCase()} measurements yet`} text="Add measurements from your healthcare visits, or add birth details in Settings, to see them on the chart." action={<div className="btn-row"><button className="btn primary" onClick={() => nav.push({ name: 'measure' })}>Add measurement</button><button className="btn soft" onClick={() => nav.push({ name: 'profile' })}>Birth details</button></div>} />}
       <div className="alert notice soft"><IInfo size={20} /><span>Growth charts are reference tools. A single measurement doesn’t show how a baby is growing — your healthcare professional is best placed to interpret them.</span></div>
       {ga != null && ga < 37 && <p className="muted small">Born at {ga}+{baby.gestational_age_days || 0} weeks: percentiles use corrected age (age minus weeks born early).</p>}
       {ga == null && <p className="muted small">Gestational age isn’t set, so chronological age is used. If your baby was born early, add it in Settings → Baby profile.</p>}

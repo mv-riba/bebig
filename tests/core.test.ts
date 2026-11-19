@@ -119,3 +119,13 @@ test('assistant: facts from records, estimates labelled, medical questions redir
   const empty = answer('When did my baby last eat?', { baby, feeds: [], poos: [], sleeps: [] } as any, [], '24h', now)[0];
   assert.equal(empty.kind, 'info'); assert.match(empty.content, /No feeds/);
 });
+
+test('growth: birth details from the profile become the first chart point', () => {
+  const b: any = { ...baby, birth_weight_grams: 3300, birth_length_mm: 500, birth_head_circumference_mm: null };
+  const list = growth.withBirth(b, []);
+  assert.equal(list.length, 1); assert.equal(list[0].measurement_date, b.date_of_birth); assert.equal(list[0].weight_grams, 3300);
+  const rec: any = { measurement_id: 'm', measurement_date: b.date_of_birth, weight_grams: 3250, length_mm: null, head_circumference_mm: 345 };
+  const merged = growth.withBirth(b, [rec]);
+  assert.equal(merged.length, 1); assert.equal(merged[0].weight_grams, 3250); assert.equal(merged[0].length_mm, 500); assert.equal(merged[0].head_circumference_mm, 345);
+  assert.equal(growth.withBirth(baby, []).length, 0);
+});

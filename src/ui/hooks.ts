@@ -1,5 +1,6 @@
 import { useStore, selectedBaby, live, myPrefs, roleFor, activeSleep, currentUserId } from '../lib/store';
 import type { Data } from '../lib/calc';
+import { withBirth } from '../lib/growth';
 import type { GrowthMeasurement, UserPrefs, BabyProfile, Role, SleepEntry, FeedTimer } from '../lib/types';
 
 export interface BabyCtx { baby: BabyProfile; data: Data; growth: GrowthMeasurement[]; prefs: UserPrefs; role: Role; active: SleepEntry | null; feedTimer: FeedTimer | null; uid: string }
@@ -11,7 +12,7 @@ export function useBaby(): BabyCtx | null {
     return {
       baby, uid: currentUserId()!,
       data: { baby, feeds: live(s.feeds, id), poos: live(s.poos, id), sleeps: live(s.sleeps, id) },
-      growth: live(s.growth, id), prefs: myPrefs(s), role: roleFor(id) ?? 'caregiver',
+      growth: withBirth(baby, live(s.growth, id)), prefs: myPrefs(s), role: roleFor(id) ?? 'caregiver',
       active: activeSleep(id, s), feedTimer: s.feedTimers[id] ?? null,
     };
   });

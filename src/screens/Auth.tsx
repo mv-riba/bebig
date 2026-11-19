@@ -10,8 +10,8 @@ import type { FeedingPreference, Sex } from '../lib/types';
 export function Logo({ size = 44 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
-      <circle cx="24" cy="24" r="22" fill="#E4ECDD" />
-      <path d="M33 27.5A10.5 10.5 0 1 1 20.5 15a8.5 8.5 0 0 0 12.5 12.5z" fill="#C9C2E6" />
+      <circle cx="24" cy="24" r="22" fill="#ECE7F9" />
+      <path d="M33 27.5A10.5 10.5 0 1 1 20.5 15a8.5 8.5 0 0 0 12.5 12.5z" fill="#9A8DD6" />
       <circle cx="31" cy="15" r="2" fill="#F2C9A9" />
     </svg>
   );
@@ -50,7 +50,7 @@ export function AuthScreen() {
         {mode === 'reset' && <button type="button" className="link small center-block" onClick={() => setMode('signin')}>Back to sign in</button>}
         {syncMode() === 'local' && <p className="muted tiny center">Local mode — accounts and records stay in this browser. {mode === 'reset' ? 'In the live app, a reset link is emailed instead.' : ''}</p>}
       </form>
-      <Wave tone="sage" />
+      <Wave tone="lav" />
     </div>
   );
 }
@@ -105,7 +105,8 @@ export function Onboarding() {
         <Field label="Sex" hint="(for WHO growth references)"><Segmented label="Sex" value={f.sex || null} onChange={v => setF({ ...f, sex: v })} options={[{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }]} /></Field>
         <Field label="Time zone"><TzSelect value={f.tz} onChange={v => setF({ ...f, tz: v })} /></Field>
         <Field label="Feeding"><Segmented label="Feeding preference" value={f.pref} onChange={v => setF({ ...f, pref: v })} options={[{ value: 'breast', label: 'Breastfed' }, { value: 'formula', label: 'Formula' }, { value: 'combination', label: 'Combination' }]} /></Field>
-        <button type="button" className="link small" onClick={() => setMore(!more)}>{more ? 'Hide' : 'Add'} birth details (optional)</button>
+        <button type="button" className="link small" onClick={() => setMore(!more)}>{more ? 'Hide birth details' : '+ Add birth details (weight, length, head, gestational age)'}</button>
+        {!more && <p className="muted tiny">Optional — you can also add or change these any time in Settings → Birth details.</p>}
         {more && (
           <>
             <Field label="Gestational age at birth"><div className="two"><input inputMode="numeric" placeholder="weeks" aria-label="weeks" value={f.gaw} onChange={set('gaw')} /><input inputMode="numeric" placeholder="days" aria-label="days" value={f.gad} onChange={set('gad')} /></div></Field>

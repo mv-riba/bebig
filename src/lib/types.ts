@@ -62,6 +62,7 @@ export interface FeedingEntry extends Audited {
   start_datetime: string;
   end_datetime?: string | null;
   duration_seconds?: number | null;
+  breast_side?: 'left' | 'right' | 'both' | null; // which breast(s), recordable without the timer
   left_duration_seconds?: number | null;
   right_duration_seconds?: number | null;
   quantity_ml?: number | null;

@@ -91,6 +91,7 @@ create table public.feeding_entries (
   start_datetime timestamptz not null,
   end_datetime timestamptz,
   duration_seconds integer check (duration_seconds between 0 and 14400),
+  breast_side text check (breast_side in ('left','right','both')),
   left_duration_seconds integer check (left_duration_seconds between 0 and 14400),
   right_duration_seconds integer check (right_duration_seconds between 0 and 14400),
   quantity_ml numeric(6,1) check (quantity_ml > 0 and quantity_ml <= 500),

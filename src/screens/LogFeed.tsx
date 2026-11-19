@@ -29,14 +29,15 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
   const [durMin, setDurMin] = useState<number | null>(existing?.duration_seconds != null ? Math.round(existing.duration_seconds / 60) : null);
   const [left, setLeft] = useState<number | null>(existing?.left_duration_seconds != null ? Math.round(existing.left_duration_seconds / 60) : null);
   const [right, setRight] = useState<number | null>(existing?.right_duration_seconds != null ? Math.round(existing.right_duration_seconds / 60) : null);
-  const [sides, setSides] = useState(existing ? existing.left_duration_seconds != null || existing.right_duration_seconds != null : false);
+  const inferSide = (e?: FeedingEntry) => e?.breast_side ?? (e && e.left_duration_seconds && e.right_duration_seconds ? 'both' : e?.left_duration_seconds ? 'left' : e?.right_duration_seconds ? 'right' : null);
+  const [side, setSide] = useState<'left' | 'right' | 'both' | null>(inferSide(existing));
   const [qty, setQty] = useState<number | null>(existing?.quantity_ml ?? null);
   const [obs, setObs] = useState<string[]>(existing?.observations ?? []);
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
 
   // keep total in sync with per-side durations when those are used
-  useEffect(() => { if (sides && (left != null || right != null)) setDurMin((left || 0) + (right || 0)); }, [left, right, sides]);
+  useEffect(() => { if (side === 'both' && (left != null || right != null)) setDurMin((left || 0) + (right || 0)); }, [left, right, side]);
 
   if (!ctx) return null;
   const { baby, feedTimer } = ctx;
@@ -52,6 +53,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
         const t = feedTimerTotals(timer);
         const sided = t.left + t.right > 0;
         row = { ...row, start_datetime: timer.started_at, end_datetime: new Date().toISOString(), duration_seconds: Math.round(t.total),
+          breast_side: t.left > 0 && t.right > 0 ? 'both' : t.left > 0 ? 'left' : t.right > 0 ? 'right' : null,
           left_duration_seconds: sided ? Math.round(t.left) : null, right_duration_seconds: sided ? Math.round(t.right) : null, quantity_ml: null };
       } else {
         const s = fromLocalInput(start, tz);
@@ -61,12 +63,14 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
           const d = durMin != null ? durMin * 60 : null;
           if (d != null && (d < 0 || d > 4 * 3600)) throw new Error('Duration should be between 0 and 4 hours.');
           row.duration_seconds = d; row.end_datetime = d != null ? new Date(new Date(s).getTime() + d * 1000).toISOString() : null;
-          row.left_duration_seconds = sides && left != null ? left * 60 : null; row.right_duration_seconds = sides && right != null ? right * 60 : null;
+          row.breast_side = side;
+          row.left_duration_seconds = side === 'both' ? (left != null ? left * 60 : null) : side === 'left' ? d : null;
+          row.right_duration_seconds = side === 'both' ? (right != null ? right * 60 : null) : side === 'right' ? d : null;
           row.quantity_ml = null;
         } else {
           if (qty == null || qty <= 0) throw new Error('Please enter the quantity in ml.');
           if (qty > 500) throw new Error('Quantity looks too large — please check (max 500 ml).');
-          row.quantity_ml = qty; row.duration_seconds = null; row.left_duration_seconds = null; row.right_duration_seconds = null;
+          row.quantity_ml = qty; row.duration_seconds = null; row.breast_side = null; row.left_duration_seconds = null; row.right_duration_seconds = null;
           if (end) { const e = fromLocalInput(end, tz); if (new Date(e) <= new Date(s)) throw new Error('End time must be after the start time.'); row.end_datetime = e; } else row.end_datetime = null;
         }
       }
@@ -92,7 +96,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
         <div className="card timer-card">
           {!timer ? (
             <>
-              <p className="muted small">Use the timer, or enter the details below.</p>
+              <p className="muted small">Start a timer on a side, or enter the feed manually below (you can still choose left, right or both).</p>
               <div className="btn-row">
                 <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'left')}><IPlay size={16} /> Left</button>
                 <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'right')}><IPlay size={16} /> Right</button>
@@ -121,16 +125,18 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
           <Field label="Start time"><input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
           {type === 'breast' ? (
             <>
-              <Field label="Duration" hint="(optional)">
-                <Stepper label="duration" value={durMin} onChange={v => { setSides(false); setDurMin(v); }} step={5} max={240} unit="min" />
+              <Field label="Breast" hint="(optional)">
+                <Segmented label="Breast side" value={side} onChange={v => setSide(v === side ? null : v)} options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }, { value: 'both', label: 'Both' }]} />
               </Field>
-              <button type="button" className="link small" onClick={() => setSides(!sides)}>{sides ? 'Hide left / right' : 'Add left / right durations'}</button>
-              {sides && (
+              {side === 'both' && (
                 <div className="two">
                   <Field label="Left" hint="(optional)"><Stepper label="left duration" value={left} onChange={setLeft} unit="min" max={180} /></Field>
                   <Field label="Right" hint="(optional)"><Stepper label="right duration" value={right} onChange={setRight} unit="min" max={180} /></Field>
                 </div>
               )}
+              <Field label={side === 'both' ? 'Total duration' : 'Duration'} hint="(optional)">
+                <Stepper label="duration" value={durMin} onChange={v => { if (side === 'both') { setLeft(null); setRight(null); } setDurMin(v); }} step={5} max={240} unit="min" />
+              </Field>
             </>
           ) : (
             <>

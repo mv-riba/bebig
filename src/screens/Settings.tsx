@@ -24,6 +24,7 @@ export function Settings() {
   const { baby, prefs } = ctx;
   const go = (r: Route) => () => nav.push(r);
   const age = daysBetween(baby.date_of_birth, todayKey(baby.timezone));
+  const hasBirth = baby.birth_weight_grams != null || baby.birth_length_mm != null || baby.birth_head_circumference_mm != null;
   return (
     <div className="screen settings">
       <header className="screen-head"><span /><h1>Settings</h1><span /></header>
@@ -35,12 +36,14 @@ export function Settings() {
       {babies.length > 1 && (
         <div className="chips">{babies.map(b => <Chip key={b.baby_id} on={b.baby_id === baby.baby_id} onClick={() => selectBaby(b.baby_id)}>{b.name}</Chip>)}</div>
       )}
-      <h2 className="sec-title">Baby profile</h2>
-      <div className="card kv" onClick={go({ name: 'profile' })} role="button" tabIndex={0}>
-        <div><span>Birth weight</span><strong>{baby.birth_weight_grams ? (baby.birth_weight_grams / 1000).toFixed(2) + ' kg' : '—'}</strong></div>
-        <div><span>Birth length</span><strong>{baby.birth_length_mm ? (baby.birth_length_mm / 10).toFixed(1) + ' cm' : '—'}</strong></div>
-        <div><span>Head circumference</span><strong>{baby.birth_head_circumference_mm ? (baby.birth_head_circumference_mm / 10).toFixed(1) + ' cm' : '—'}</strong></div>
-      </div>
+      <div className="sec-head"><h2>Birth details</h2><button className="link" onClick={go({ name: 'profile' })}><IEdit size={16} /> {hasBirth ? 'Edit' : 'Add'}</button></div>
+      <button className="card kv" onClick={go({ name: 'profile' })} aria-label="Edit birth details">
+        <div><span>Birth weight</span><strong>{baby.birth_weight_grams ? (baby.birth_weight_grams / 1000).toFixed(2) + ' kg' : <em className="muted">Not added</em>}</strong></div>
+        <div><span>Birth length</span><strong>{baby.birth_length_mm ? (baby.birth_length_mm / 10).toFixed(1) + ' cm' : <em className="muted">Not added</em>}</strong></div>
+        <div><span>Head circumference</span><strong>{baby.birth_head_circumference_mm ? (baby.birth_head_circumference_mm / 10).toFixed(1) + ' cm' : <em className="muted">Not added</em>}</strong></div>
+        <div><span>Gestational age</span><strong>{baby.gestational_age_weeks != null ? `${baby.gestational_age_weeks}+${baby.gestational_age_days || 0} weeks` : <em className="muted">Not added</em>}</strong></div>
+        {!hasBirth && <p className="kv-hint">Add birth weight, length and head circumference to see them as the first point on the growth charts.</p>}
+      </button>
       <div className="card list">
         <Row icon={<IBottle />} title="Feeding preferences" sub={PREF_LABEL[baby.feeding_preference]} onClick={go({ name: 'feeding-pref' })} right={<IChevron />} />
         <Row icon={<IUsers />} title="Shared access" sub={`${members} member${members === 1 ? '' : 's'}`} onClick={go({ name: 'sharing' })} right={<IChevron />} />
@@ -93,11 +96,15 @@ export function ProfileEdit({ onBack }: { onBack: () => void }) {
       <div className="two"><Field label="Date of birth"><input type="date" value={f.date_of_birth} onChange={set('date_of_birth')} /></Field><Field label="Time of birth" hint="(optional)"><input type="time" value={f.time_of_birth} onChange={set('time_of_birth')} /></Field></div>
       <Field label="Sex" hint="(used for WHO growth references)"><Segmented label="Sex" value={f.sex} onChange={v => setF({ ...f, sex: v })} options={[{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }]} /></Field>
       <Field label="Time zone"><TzSelect value={f.timezone} onChange={v => setF({ ...f, timezone: v })} /></Field>
-      <Field label="Gestational age at birth" hint="(optional)"><div className="two"><input inputMode="numeric" placeholder="weeks" value={f.ga_w} onChange={set('ga_w')} aria-label="weeks" /><input inputMode="numeric" placeholder="days" value={f.ga_d} onChange={set('ga_d')} aria-label="days" /></div></Field>
-      <div className="three">
-        <Field label="Birth weight (kg)"><input inputMode="decimal" value={f.bw} onChange={set('bw')} /></Field>
-        <Field label="Length (cm)"><input inputMode="decimal" value={f.bl} onChange={set('bl')} /></Field>
-        <Field label="Head (cm)"><input inputMode="decimal" value={f.bh} onChange={set('bh')} /></Field>
+      <div className="card form-section">
+        <h2>Birth details</h2>
+        <p className="muted small">All optional. Birth measurements appear as the first point on the growth charts; gestational age lets percentiles use corrected age if your baby was born early.</p>
+        <div className="three">
+          <Field label="Weight (kg)"><input inputMode="decimal" placeholder="e.g. 3.4" value={f.bw} onChange={set('bw')} /></Field>
+          <Field label="Length (cm)"><input inputMode="decimal" placeholder="e.g. 50" value={f.bl} onChange={set('bl')} /></Field>
+          <Field label="Head (cm)"><input inputMode="decimal" placeholder="e.g. 34" value={f.bh} onChange={set('bh')} /></Field>
+        </div>
+        <Field label="Gestational age at birth"><div className="two"><input inputMode="numeric" placeholder="weeks, e.g. 39" value={f.ga_w} onChange={set('ga_w')} aria-label="weeks" /><input inputMode="numeric" placeholder="days, e.g. 2" value={f.ga_d} onChange={set('ga_d')} aria-label="days" /></div></Field>
       </div>
       {err && <div className="alert error" role="alert">{err}</div>}
       <button className="btn primary block" onClick={save}>Save</button>

@@ -24,8 +24,10 @@ export function describe(item: TItem, tz: string, fmt: TimeFormat, now = Date.no
     const f = item.e; const d = feedDurationSeconds(f);
     const parts = [FEED_LABEL[f.feeding_type]];
     if (f.feeding_type === 'breast') {
+      const side = f.breast_side ?? (f.left_duration_seconds && f.right_duration_seconds ? 'both' : f.left_duration_seconds ? 'left' : f.right_duration_seconds ? 'right' : null);
+      if (side === 'left') parts.push('Left'); else if (side === 'right') parts.push('Right');
       if (d) parts.push(formatDuration(d));
-      if (f.left_duration_seconds != null || f.right_duration_seconds != null) parts.push(`L ${formatDuration(f.left_duration_seconds || 0)} · R ${formatDuration(f.right_duration_seconds || 0)}`);
+      if (side === 'both') parts.push(f.left_duration_seconds != null || f.right_duration_seconds != null ? `L ${formatDuration(f.left_duration_seconds || 0)} · R ${formatDuration(f.right_duration_seconds || 0)}` : 'Both sides');
     } else if (f.quantity_ml) parts.push(`${f.quantity_ml} ml`);
     return { title: 'Feeding', sub: parts.join(' · '), time: formatTime(f.start_datetime, tz, fmt) };
   }

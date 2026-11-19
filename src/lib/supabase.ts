@@ -46,7 +46,7 @@ const REMOTE: Record<Table, { table: string; id: string }> = {
 const COLUMNS: Record<Table, string[]> = {
   babies: ['baby_id', 'name', 'date_of_birth', 'time_of_birth', 'sex', 'gestational_age_weeks', 'gestational_age_days', 'timezone', 'photograph_url', 'feeding_preference', 'birth_weight_grams', 'birth_length_mm', 'birth_head_circumference_mm', 'created_by', 'created_at', 'updated_at'],
   access: ['access_id', 'baby_id', 'user_id', 'invited_email', 'role', 'invitation_status', 'invited_by', 'created_at', 'updated_at'],
-  feeds: ['feed_id', 'baby_id', 'feeding_type', 'start_datetime', 'end_datetime', 'duration_seconds', 'left_duration_seconds', 'right_duration_seconds', 'quantity_ml', 'observations', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
+  feeds: ['feed_id', 'baby_id', 'feeding_type', 'start_datetime', 'end_datetime', 'duration_seconds', 'breast_side', 'left_duration_seconds', 'right_duration_seconds', 'quantity_ml', 'observations', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   poos: ['poo_id', 'baby_id', 'datetime', 'colour', 'size', 'texture', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   sleeps: ['sleep_id', 'baby_id', 'start_datetime', 'end_datetime', 'duration_seconds', 'status', 'pauses', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   growth: ['measurement_id', 'baby_id', 'measurement_date', 'weight_grams', 'length_mm', 'head_circumference_mm', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],

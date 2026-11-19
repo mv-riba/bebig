@@ -55,7 +55,7 @@ export function createDemoBaby() {
         s.sleeps[id] = { ...audit, sleep_id: id, start_datetime: new Date(st).toISOString(), end_datetime: new Date(en).toISOString(), duration_seconds: Math.round((en - st) / 1000), status: 'completed', pauses: [], notes: null };
       }
     }
-    for (const [days, w, l, h] of [[0, 3250, 500, 340], [5, 3150, null, null], [12, 3480, 515, 352], [19, 3790, 525, 361]] as const) {
+    for (const [days, w, l, h] of [[5, 3150, null, null], [12, 3480, 515, 352], [19, 3790, 525, 361]] as const) {
       const id = uuid();
       s.growth[id] = { ...audit, measurement_id: id, measurement_date: addDays(dob, days), weight_grams: w, length_mm: l, head_circumference_mm: h, notes: days === 0 ? 'Birth' : null };
     }

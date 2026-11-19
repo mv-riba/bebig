@@ -2,7 +2,7 @@
 // Weekly tables are used up to 13 weeks, monthly tables after, with linear interpolation of L, M and S.
 // Percentiles are never invented: outside the supported range or with missing data, functions return null + a reason.
 import who from '../data/who-lms.json';
-import type { BabyProfile, Sex } from './types';
+import type { BabyProfile, Sex, GrowthMeasurement } from './types';
 import { daysBetween } from './time';
 
 export type Indicator = 'weight' | 'length' | 'head';
@@ -102,3 +102,15 @@ export function assess(baby: BabyProfile, ind: Indicator, onKey: string, value: 
 
 /** Plausibility limits for input validation (not clinical thresholds). */
 export const LIMITS = { weight_grams: [300, 25000], length_mm: [250, 1100], head_circumference_mm: [200, 550] } as const;
+
+export const BIRTH_ID = 'birth';
+/** Adds the birth measurements from the baby profile as a point on the date of birth,
+ *  unless a measurement was recorded for that date (the recorded one wins, gaps are filled from the profile). */
+export function withBirth(baby: BabyProfile, list: GrowthMeasurement[]): GrowthMeasurement[] {
+  const w = baby.birth_weight_grams ?? null, l = baby.birth_length_mm ?? null, h = baby.birth_head_circumference_mm ?? null;
+  if (w == null && l == null && h == null) return list;
+  const onDob = list.find(g => g.measurement_date === baby.date_of_birth);
+  if (onDob) return list.map(g => g !== onDob ? g : { ...g, weight_grams: g.weight_grams ?? w, length_mm: g.length_mm ?? l, head_circumference_mm: g.head_circumference_mm ?? h });
+  return [{ measurement_id: BIRTH_ID, baby_id: baby.baby_id, measurement_date: baby.date_of_birth, weight_grams: w, length_mm: l, head_circumference_mm: h,
+    notes: 'Birth (from baby profile)', created_by: baby.created_by, updated_by: baby.created_by, created_at: baby.created_at, updated_at: baby.updated_at }, ...list];
+}

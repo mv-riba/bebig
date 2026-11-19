@@ -46,7 +46,7 @@ function Shell() {
       case 'feed': return <LogFeed key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
       case 'poo': return <LogPoo key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
       case 'sleep': return <LogSleep key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
-      case 'measure': return <MeasureForm key={top.id ?? 'new'} id={top.id} onKey={top.onKey} onDone={pop} />;
+      case 'measure': if (top.id === 'birth') return <ProfileEdit onBack={pop} />; return <MeasureForm key={top.id ?? 'new'} id={top.id} onKey={top.onKey} onDone={pop} />;
       case 'growth': return <GrowthCharts onBack={pop} />;
       case 'profile': return <ProfileEdit onBack={pop} />;
       case 'feeding-pref': return <FeedingPrefPage onBack={pop} />;
