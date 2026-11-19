@@ -20,7 +20,9 @@ export function Logo({ size = 44 }: { size?: number }) {
 export function AuthScreen() {
   const [mode, setMode] = useState<'signin' | 'register' | 'reset'>('signin');
   const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [name, setName] = useState('');
-  const [err, setErr] = useState<string | null>(null); const [msg, setMsg] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(() => { try { const m = sessionStorage.getItem('bebig:authmsg'); sessionStorage.removeItem('bebig:authmsg'); return m; } catch { return null; } });
+  const [busy, setBusy] = useState(false);
   const remoteMode = syncMode() === 'remote';
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(null); setMsg(null); setBusy(true);
@@ -29,7 +31,13 @@ export function AuthScreen() {
       else if (mode === 'register') await register(email, pw, name);
       else if (remoteMode) { await resetPassword(email, ''); setMsg('If an account exists for that email, we’ve sent a link to reset your password.'); setMode('signin'); }
       else { await resetPassword(email, pw); setMsg('If an account exists for that email, its password has been updated. You can sign in now.'); setMode('signin'); setPw(''); }
-    } catch (e: any) { setErr(e.message); } finally { setBusy(false); }
+    } catch (e: any) {
+      const m: string = e.message || 'Something went wrong';
+      if (m.startsWith('Check your email')) { setMsg(`We’ve sent a confirmation link to ${email.trim()}. Open it on this device, then you’re in (or come back and sign in).`); setMode('signin'); }
+      else if (/email not confirmed/i.test(m)) setErr('Please confirm your email first — check your inbox (and spam) for the link from Bebig.');
+      else if (/rate limit/i.test(m)) setErr('Too many emails were sent recently. Please wait a little and try again.');
+      else setErr(m);
+    } finally { setBusy(false); }
   };
   return (
     <div className="auth">

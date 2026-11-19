@@ -134,7 +134,7 @@ let remote: RemoteAuth | null = null;
 export function setRemoteAuth(r: RemoteAuth) { remote = r; }
 export const isRemote = () => !!remote;
 
-function adoptRemoteUser(u: { user_id: string; email: string; display_name: string }) {
+export function adoptRemoteUser(u: { user_id: string; email: string; display_name: string }) {
   const t = nowIso();
   setState(s => {
     s.users[u.user_id] = { created_at: t, ...s.users[u.user_id], user_id: u.user_id, email: u.email.toLowerCase(), display_name: s.users[u.user_id]?.display_name || u.display_name, updated_at: t };

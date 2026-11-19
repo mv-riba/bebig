@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, type Table } from './store';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -150,8 +150,20 @@ export function startRemoteSync() {
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name }, 'return=minimal'); },
     onSignedIn() { for (const k of Object.keys(cursors)) delete cursors[k]; cycle(); },
   });
-  // password-recovery link: #access_token=…&type=recovery
+  // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
+  const note = (m: string) => { try { sessionStorage.setItem('bebig:authmsg', m); } catch { /* */ } };
+  if (h.get('error_description')) {
+    history.replaceState(null, '', location.pathname);
+    note(h.get('error_code') === 'otp_expired' ? 'That link has expired or was already used. If you confirmed your email, just sign in — otherwise request a new link.' : h.get('error_description')!.replace(/\+/g, ' '));
+  } else if (h.get('access_token') && h.get('type') !== 'recovery') {
+    // email confirmation / magic link: sign straight in
+    history.replaceState(null, '', location.pathname);
+    const at = h.get('access_token')!, rt = h.get('refresh_token') || '', exp = Number(h.get('expires_in') || 3600);
+    fetch(`${URL_}/auth/v1/user`, { headers: { apikey: KEY, Authorization: `Bearer ${at}` } }).then(r => r.ok ? r.json() : Promise.reject())
+      .then(user => { saveAuth({ access_token: at, refresh_token: rt, expires_at: Date.now() + exp * 1000, user }); adoptRemoteUser({ user_id: user.id, email: user.email, display_name: user.user_metadata?.display_name || user.email.split('@')[0] }); })
+      .catch(() => note('Your email is confirmed. Please sign in.'));
+  }
   if (h.get('type') === 'recovery' && h.get('access_token')) {
     history.replaceState(null, '', location.pathname);
     const at = h.get('access_token')!;
