@@ -25,6 +25,8 @@ export function Settings() {
   const { baby, prefs } = ctx;
   const go = (r: Route) => () => nav.push(r);
   const age = daysBetween(baby.date_of_birth, todayKey(baby.timezone));
+  const nExtras = ctx.trackers.length + (baby.wet_tracking ? 1 : 0);
+  const extrasSub = nExtras ? `${nExtras} on` : 'Wet nappies, bath, your own…';
   const hasBirth = baby.birth_weight_grams != null || baby.birth_length_mm != null || baby.birth_head_circumference_mm != null;
   return (
     <div className="screen settings">
@@ -51,6 +53,7 @@ export function Settings() {
       <div className="card list">
         <Row icon={<IBottle />} title="Feeding preferences" sub={PREF_LABEL[baby.feeding_preference]} onClick={go({ name: 'feeding-pref' })} right={<IChevron />} />
         <Row icon={<IUsers />} title="Shared access" sub={`${members} member${members === 1 ? '' : 's'}`} onClick={go({ name: 'sharing' })} right={<IChevron />} />
+        <Row icon={<ISliders />} title="Extra trackers" sub={extrasSub} onClick={go({ name: 'extras-settings' })} right={<IChevron />} />
         <Row icon={<IChart />} title="Growth charts" onClick={go({ name: 'growth' })} right={<IChevron />} />
         <Row icon={<IExport />} title="Data export & deletion" onClick={go({ name: 'data' })} right={<IChevron />} />
         <Row icon={<ISliders />} title="App preferences" sub={`${prefs.time_format} · ${prefs.units}`} onClick={go({ name: 'prefs' })} right={<IChevron />} />

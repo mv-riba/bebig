@@ -129,3 +129,41 @@ test('growth: birth details from the profile become the first chart point', () =
   assert.equal(merged.length, 1); assert.equal(merged[0].weight_grams, 3250); assert.equal(merged[0].length_mm, 500); assert.equal(merged[0].head_circumference_mm, 345);
   assert.equal(growth.withBirth(baby, []).length, 0);
 });
+
+test('wet-only nappies never count as poos; both counts for each', async () => {
+  const k = '2026-07-01';
+  const p = (h: number, nappy_type: any) => ({ ...audit, poo_id: 'p' + h, datetime: time.fromLocalInput(`${k}T${String(h).padStart(2, '0')}:00`, TZ), nappy_type });
+  const all = [p(6, 'wet'), p(8, 'poo'), p(10, 'both'), p(12, 'wet')];
+  const d: any = { baby, feeds: [], sleeps: [], poos: all.filter(x => x.nappy_type !== 'wet'), wet: all.filter(x => x.nappy_type === 'wet') };
+  const st = calc.dayStats(d, k);
+  assert.equal(st.pooCount, 2); assert.equal(st.wetCount, 3);
+  const r = answer('How many wet nappies today?', { ...d, baby: { ...baby, wet_tracking: true } }, [], '24h', time.dayStart(k, TZ).getTime() + 20 * 3600e3)[0];
+  assert.equal(r.kind, 'fact');
+});
+
+test('insight: bowel movements after a consistent bottle volume / number of feeds', () => {
+  const now = Date.now(); const today = time.todayKey(TZ);
+  const feeds: any[] = [], poos: any[] = [];
+  for (let i = 7; i >= 0; i--) {
+    const ds = time.dayStart(time.addDays(today, -i), TZ).getTime();
+    for (let h = 0; h < 24; h += 3) { const t = ds + h * 3600e3; if (t < now) feeds.push({ ...audit, feed_id: `f${i}-${h}`, feeding_type: 'formula', quantity_ml: 120, start_datetime: new Date(t).toISOString(), observations: [] }); }
+    for (const h of [10, 22]) { const t = ds + h * 3600e3 + 30 * 60e3; if (t < now) poos.push({ ...audit, poo_id: `p${i}-${h}`, datetime: new Date(t).toISOString(), nappy_type: 'poo' }); }
+  }
+  const rep = buildInsights({ baby, feeds, poos, sleeps: [] } as any, '24h', now);
+  const byFeeds = rep.observations.find(o => o.insight_id === 'poo-after-feeds');
+  const byVol = rep.observations.find(o => o.insight_id === 'poo-after-volume');
+  assert.ok(byFeeds, 'feeds-between insight'); assert.match(byFeeds!.description, /after 4 feeds/);
+  assert.ok(byVol, 'volume insight'); assert.match(byVol!.description, /480 ml/);
+  assert.match(byVol!.description, /association/);
+});
+
+test('assistant answers about custom trackers from records', () => {
+  const now = Date.now();
+  const t: any = { ...audit, tracker_id: 'vit', name: 'Vitamin D', icon: 'pill', kind: 'daily', enabled: true, sort: 1 };
+  const e: any = { ...audit, extra_id: 'e1', tracker_id: 'vit', datetime: new Date(now - 3600e3).toISOString() };
+  const d: any = { baby, feeds: [], poos: [], sleeps: [] };
+  const r = answer('Did she get vitamin D today?', d, [], '24h', now, { trackers: [t], extras: [e] })[0];
+  assert.equal(r.kind, 'fact'); assert.match(r.content, /Vitamin D today: Given/);
+  const none = answer('When was the last bath?', d, [], '24h', now, { trackers: [t], extras: [e] })[0];
+  assert.notEqual(none.kind, 'fact');
+});

@@ -272,3 +272,38 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
   #root { box-shadow: 0 0 0 1px var(--line); background: var(--cream); }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- Extras ---------- */
+.more-pill { align-self: center; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 18px; border-radius: 999px; background: var(--accent-l); color: var(--accent-d); font-weight: 800; font-size: .92rem; margin-top: -4px; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 6px 12px; border-radius: 18px; background: var(--card); border: 1.5px solid var(--line); box-shadow: var(--shadow); text-align: center; min-height: 112px; }
+.tile:active { transform: scale(.98); }
+.tile-ic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--lav-l); color: var(--lav-d); }
+.tile-n { font-weight: 800; font-size: .9rem; line-height: 1.15; } .tile-s { font-size: .74rem; color: var(--muted); }
+.tile.done { background: var(--sage-xl); border-color: #C9D8C0; } .tile.done .tile-ic { background: var(--sage-d); color: #fff; }
+.tile-manage { background: transparent; border-style: dashed; border-color: var(--accent); box-shadow: none; } .tile-manage .tile-ic { background: var(--accent-l); color: var(--accent-d); }
+.xt-ic { width: 38px; height: 38px; border-radius: 50%; background: var(--lav-l); color: var(--lav-d); }
+.xt-wet, .tile-ic.xt-wet { background: #E6EEF8; color: #3F6A93; }
+.btn.dashed { border: 1.5px dashed var(--accent); color: var(--accent-d); background: transparent; }
+.icon-pick { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.icb { height: 46px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--card); display: grid; place-items: center; color: var(--ink-2); }
+.icb.on { border-color: var(--accent); background: var(--accent-l); color: var(--accent-d); }
+.kinds { display: flex; flex-direction: column; gap: 8px; }
+.kind { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 16px; border: 1.5px solid var(--line); background: var(--card); text-align: left; width: 100%; }
+.kind.on { border-color: var(--accent); background: var(--accent-xl); } .kind.on .radio { border: 7px solid var(--accent-d); } .kind:disabled { opacity: .45; }
+.both-ic { display: inline-flex; gap: 2px; }
+.sum-wet { color: #3F6A93; font-weight: 700; }
+.tl-minor { padding: 4px 0; } .tl-minor .tl-dot { width: 24px; height: 24px; margin: 4px; } .tl-minor .tl-time, .tl-minor .tl-title { font-size: .84rem; font-weight: 600; color: var(--muted); padding-top: 6px; }
+.tl-extra .tl-dot { background: var(--cream-2); color: var(--ink-2); } .tl-wet .tl-dot { background: #E6EEF8; color: #3F6A93; }
+.extras-card summary { display: flex; justify-content: space-between; align-items: center; font-weight: 800; cursor: pointer; list-style: none; min-height: 28px; }
+.extras-card summary::-webkit-details-marker { display: none; }
+.xrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 0; text-align: left; min-height: 44px; color: var(--ink-2); }
+.xrow + .xrow, summary + .xrow { border-top: 1px solid var(--line); }
+.xrow-ic { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--cream-2); color: var(--ink-2); flex: none; }
+.xrow-n { flex: 1; } .xrow-v { font-weight: 700; color: var(--ink); }
+.extras-toggle { display: flex; justify-content: space-between; align-items: center; font-size: .88rem; color: var(--ink-2); }
+/* calendar: growth days get a ring instead of a 4th dot */
+.cal-num { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; }
+.cal-day.has-growth .cal-num { box-shadow: 0 0 0 2px var(--accent); }
+.cal-day.sel.has-growth .cal-num { box-shadow: 0 0 0 2px #fff; }
+.ring-key { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--accent); display: inline-block; }

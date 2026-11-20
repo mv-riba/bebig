@@ -7,10 +7,10 @@
 
 import { useSyncExternalStore, useRef } from 'react';
 import type {
-  User, BabyProfile, BabyAccess, FeedingEntry, PooEntry, SleepEntry, GrowthMeasurement, FeedTimer, UserPrefs, Role,
+  User, BabyProfile, BabyAccess, FeedingEntry, PooEntry, SleepEntry, GrowthMeasurement, FeedTimer, UserPrefs, Role, TrackerDef, ExtraEntry,
 } from './types';
 
-export type Table = 'feeds' | 'poos' | 'sleeps' | 'growth' | 'babies' | 'access';
+export type Table = 'feeds' | 'poos' | 'sleeps' | 'growth' | 'babies' | 'access' | 'trackers' | 'extras';
 export interface OutboxOp { op_id: string; table: Table; row: any; queued_at: string }
 export interface AuditEvent { at: string; user_id: string; action: string; detail?: string }
 interface LocalCredential { user_id: string; salt: string; hash: string }
@@ -28,6 +28,8 @@ export interface State {
   poos: Record<string, PooEntry>;
   sleeps: Record<string, SleepEntry>;
   growth: Record<string, GrowthMeasurement>;
+  trackers: Record<string, TrackerDef>;
+  extras: Record<string, ExtraEntry>;
   feedTimers: Record<string, FeedTimer>; // by baby_id
   prefs: Record<string, UserPrefs>; // by user_id
   selectedBaby: Record<string, string>; // user_id -> baby_id
@@ -52,14 +54,14 @@ export const defaultPrefs = (): UserPrefs => ({
 function empty(): State {
   return {
     version: 1, session: null, users: {}, credentials: {}, babies: {}, access: {}, feeds: {}, poos: {}, sleeps: {},
-    growth: {}, feedTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null,
+    growth: {}, trackers: {}, extras: {}, feedTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null,
   };
 }
 
 function load(): State {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...empty(), ...JSON.parse(raw) };
+    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.syncFailed ??= []; return s; }
   } catch { /* corrupted or unavailable storage */ }
   return empty();
 }
@@ -269,7 +271,7 @@ export function deleteBabyData(baby_id: string) {
   assertAccess(baby_id, 'owner');
   const uid = currentUserId()!;
   setState(s => {
-    for (const t of ['feeds', 'poos', 'sleeps', 'growth'] as const) {
+    for (const t of ['feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const) {
       for (const [k, v] of Object.entries(s[t] as Record<string, any>)) if (v.baby_id === baby_id) delete (s[t] as any)[k];
     }
     Object.values(s.access).forEach(a => { if (a.baby_id === baby_id) delete s.access[a.access_id]; });
@@ -327,8 +329,8 @@ export function setRole(access_id: string, role: Role) {
 
 // ---------------- Activity entries ----------------
 
-type Kind = 'feeds' | 'poos' | 'sleeps' | 'growth';
-const idField: Record<Kind, string> = { feeds: 'feed_id', poos: 'poo_id', sleeps: 'sleep_id', growth: 'measurement_id' };
+type Kind = 'feeds' | 'poos' | 'sleeps' | 'growth' | 'trackers' | 'extras';
+const idField: Record<Kind, string> = { feeds: 'feed_id', poos: 'poo_id', sleeps: 'sleep_id', growth: 'measurement_id', trackers: 'tracker_id', extras: 'extra_id' };
 
 export function upsertEntry<K extends Kind>(table: K, row: any): string {
   assertAccess(row.baby_id);
@@ -439,6 +441,7 @@ export function exportBaby(baby_id: string) {
     profile: state.babies[baby_id],
     members: pick(state.access).map(a => ({ email: a.invited_email, role: a.role, status: a.invitation_status })),
     feeding_entries: pick(state.feeds), poo_entries: pick(state.poos), sleep_entries: pick(state.sleeps), growth_measurements: pick(state.growth),
+    extra_trackers: pick(state.trackers), extra_entries: pick(state.extras),
   };
 }
 

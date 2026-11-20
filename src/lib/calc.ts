@@ -3,7 +3,7 @@ import type { FeedingEntry, PooEntry, SleepEntry, BabyProfile } from './types';
 import { dateKey, dayStart, dayEnd, overlapSeconds, addDays } from './time';
 import { sleepElapsed } from './store';
 
-export interface Data { baby: BabyProfile; feeds: FeedingEntry[]; poos: PooEntry[]; sleeps: SleepEntry[] }
+export interface Data { baby: BabyProfile; feeds: FeedingEntry[]; poos: PooEntry[]; sleeps: SleepEntry[]; wet?: PooEntry[] }
 
 const t = (iso: string) => new Date(iso).getTime();
 export const byStart = <T>(get: (x: T) => string) => (a: T, b: T) => t(get(a)) - t(get(b));
@@ -40,7 +40,7 @@ export interface DayStats {
   key: string;
   feeds: FeedingEntry[]; poos: PooEntry[]; sleeps: SleepEntry[];
   feedCount: number; formulaMl: number; expressedMl: number; breastSeconds: number; breastCount: number; bottleCount: number;
-  pooCount: number;
+  pooCount: number; wetCount: number; wets: PooEntry[];
   sleepCount: number; sleepSeconds: number; activeSleep: boolean;
   avgFeedIntervalMin: number | null;
 }
@@ -50,6 +50,8 @@ export function dayStats(d: Data, key: string, now = Date.now()): DayStats {
   const a = dayStart(key, tz).getTime(), b = dayEnd(key, tz).getTime();
   const feeds = sortedFeeds(d).filter(f => dateKey(f.start_datetime, tz) === key);
   const poos = sortedPoos(d).filter(p => dateKey(p.datetime, tz) === key);
+  const wets = (d.wet ?? []).filter(p => dateKey(p.datetime, tz) === key);
+  const wetCount = wets.length + poos.filter(p => p.nappy_type === 'both').length;
   // a sleep belongs to every local day it overlaps (sessions crossing midnight are split for totals)
   const sleeps = [...d.sleeps].sort(byStart(s => s.start_datetime)).filter(s => {
     const st = t(s.start_datetime), en = s.end_datetime ? t(s.end_datetime) : now;
@@ -64,7 +66,7 @@ export function dayStats(d: Data, key: string, now = Date.now()): DayStats {
   const sleepSeconds = sleeps.reduce((acc, s) => acc + sleepSecondsIn(s, a, b, now), 0);
   return {
     key, feeds, poos, sleeps, feedCount: feeds.length, formulaMl, expressedMl, breastSeconds, breastCount, bottleCount,
-    pooCount: poos.length, sleepCount: sleeps.length, sleepSeconds, activeSleep: sleeps.some(s => s.status !== 'completed'),
+    pooCount: poos.length, wetCount, wets, sleepCount: sleeps.length, sleepSeconds, activeSleep: sleeps.some(s => s.status !== 'completed'),
     avgFeedIntervalMin: avgInterval(feeds.map(f => f.start_datetime)),
   };
 }

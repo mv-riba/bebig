@@ -7,7 +7,8 @@ import { sortedFeeds, sortedPoos, completedSleeps, dayStats, avgInterval, keyRan
 import { buildInsights, EVIDENCE_LABEL } from './insights';
 import { todayKey, addDays, formatTime, formatDuration, formatAgo, formatDateKey, dateKey, TimeFormat, weekdayIndex, monthName } from './time';
 import { sleepElapsed } from './store';
-import type { GrowthMeasurement } from './types';
+import type { GrowthMeasurement, TrackerDef, ExtraEntry } from './types';
+import { describeExtra, daySummary } from './extras';
 import { assess, formatPercentile, toDisplay } from './growth';
 
 export interface Reply { content: string; kind: 'fact' | 'estimate' | 'safety' | 'info' }
@@ -57,7 +58,7 @@ function describeFeed(f: ReturnType<typeof sortedFeeds>[number]) {
   return `${f.quantity_ml ? f.quantity_ml + ' ml ' : 'a '}${f.feeding_type === 'formula' ? 'formula' : 'expressed milk'}`;
 }
 
-export function answer(question: string, d: Data, growth: GrowthMeasurement[], fmt: TimeFormat = '24h', now = Date.now()): Reply[] {
+export function answer(question: string, d: Data, growth: GrowthMeasurement[], fmt: TimeFormat = '24h', now = Date.now(), x?: { trackers: TrackerDef[]; extras: ExtraEntry[] }): Reply[] {
   const q = question.trim();
   const s = q.toLowerCase();
   const tz = d.baby.timezone; const name = d.baby.name;
@@ -143,6 +144,32 @@ export function answer(question: string, d: Data, growth: GrowthMeasurement[], f
     return [{ kind: 'fact', content: `The latest recorded ${ind === 'head' ? 'head circumference' : ind} was ${ind === 'weight' ? v.toFixed(2) : v.toFixed(1)} ${unit} on ${formatDateKey(last.measurement_date, 'weekday')}${a.percentile != null ? `, around the ${formatPercentile(a.percentile)} percentile on the WHO standard${a.corrected ? ' (using corrected age)' : ''}` : ''}. Growth charts are reference tools — your healthcare professional is best placed to interpret them.` }];
   }
 
+  // ---- Wet nappies ----
+  if (/\bwet\b|\bpee\b|\bwee\b|\burin/.test(s)) {
+    const wets = [...(d.wet ?? []), ...d.poos.filter(p => p.nappy_type === 'both')].sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime));
+    if (!wets.length) return [{ kind: 'info', content: d.baby.wet_tracking ? 'No wet nappies have been recorded yet.' : 'Wet nappies aren’t being tracked. You can turn this on in Settings → Extra trackers.' }];
+    if (isLastQ(s)) { const w = wets[wets.length - 1]; return [{ kind: 'fact', content: `The last recorded wet nappy was at ${T(w.datetime)}${dateKey(w.datetime, tz) !== todayKey(tz) ? ` on ${formatDateKey(dateKey(w.datetime, tz), 'weekday')}` : ''} (${formatAgo(w.datetime, now)}).` }]; }
+    const r = parseRange(s, tz);
+    const n = wets.filter(w => r.keys.includes(dateKey(w.datetime, tz))).length;
+    return [{ kind: 'fact', content: `${n} wet nappie${n === 1 ? ' was' : 's were'} recorded ${r.label}.` }];
+  }
+  // ---- Extra trackers (by name) ----
+  const tr = (x?.trackers ?? []).find(t => s.includes(t.name.toLowerCase()) || t.name.toLowerCase().split(/\s+/).some(w => w.length > 3 && new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '')}`).test(s)));
+  if (tr) {
+    const es = (x?.extras ?? []).filter(e => e.tracker_id === tr.tracker_id).sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime));
+    if (!es.length) return [{ kind: 'info', content: `Nothing has been recorded for ${tr.name} yet.` }];
+    const last = es[es.length - 1];
+    if (tr.kind === 'daily' && !isLastQ(s)) {
+      const r = parseRange(s, tz);
+      const lines = r.keys.map(k => `• ${formatDateKey(k, 'weekday')}: ${daySummary(tr, es, tz, k, fmt) ?? 'not recorded'}`);
+      return [{ kind: 'fact', content: r.keys.length === 1 ? `${tr.name} ${r.label}: ${daySummary(tr, es, tz, r.keys[0], fmt) ?? 'not recorded'}.` : `${tr.name}, ${r.label}:\n${lines.join('\n')}` }];
+    }
+    const r = parseRange(s, tz);
+    const inR = es.filter(e => r.keys.includes(dateKey(e.datetime, tz)));
+    const lastLine = `Last: ${describeExtra(tr, last)} at ${T(last.datetime)}${dateKey(last.datetime, tz) !== todayKey(tz) ? ` on ${formatDateKey(dateKey(last.datetime, tz), 'weekday')}` : ''} (${formatAgo(last.datetime, now)}).`;
+    return [{ kind: 'fact', content: isLastQ(s) || !inR.length ? lastLine : `${tr.name} ${r.label}: ${daySummary(tr, inR, tz, r.keys[r.keys.length - 1], fmt) ?? inR.length + '×'}. ${lastLine}` }];
+  }
+
   const isFeed = /\b(eat|ate|feed|fed|feeding|milk|bottle|breast|formula|nurs)/.test(s);
   const isPoo = /\b(poo|poop|bowel|nappy|diaper|stool|dirty)/.test(s);
   const isSleep = /\b(sleep|slept|nap|asleep|awake|wake|woke|bed)/.test(s);
@@ -202,6 +229,8 @@ export function answer(question: string, d: Data, growth: GrowthMeasurement[], f
 
   return [{ kind: 'info', content: `I can answer questions about ${name}’s recorded feeds, sleep, bowel movements and growth. Try: “When did ${name} last eat?”, “How much did ${name} sleep yesterday?” or “Summarise the last three days”.` }];
 }
+
+const isLastQ = (s: string) => /\b(last|latest|recent|when did|when was|most recent|since)\b/.test(s) && !/\blast (week|\d+|two|three|four|five|six|seven) /.test(s + ' ');
 
 export const SUGGESTIONS = ['When did my baby last eat?', 'How much did my baby sleep yesterday?', 'How many poos today?', 'Next feed?', 'Does my baby have a consistent nap pattern?', 'Summarise the last three days', 'What has changed in sleep over the last 7 days?', 'Average time between feeds this week'];
 export { monthName };

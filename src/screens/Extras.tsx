@@ -1,0 +1,182 @@
+import React, { useState } from 'react';
+import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, Row } from '../ui/ui';
+import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash } from '../ui/icons';
+import { useBaby } from '../ui/hooks';
+import { useNav } from '../ui/nav';
+import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby } from '../lib/store';
+import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus } from '../lib/extras';
+import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey } from '../lib/time';
+import type { TrackerDef, TrackerIcon, TrackerKind, ExtraEntry, Level } from '../lib/types';
+import { defaultTime } from './LogFeed';
+
+const S = ({ size = 22, children }: { size?: number; children: React.ReactNode }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
+);
+export function TrackerIconSvg({ icon, size = 22 }: { icon: TrackerIcon; size?: number }) {
+  switch (icon) {
+    case 'drop': return <S size={size}><path d="M12 3.5s6 6.4 6 10.5a6 6 0 0 1-12 0c0-4.1 6-10.5 6-10.5z" /></S>;
+    case 'wind': return <S size={size}><path d="M3 8h11a3 3 0 1 0-3-3" /><path d="M3 12h15a3 3 0 1 1-3 3" /><path d="M3 16h7" /></S>;
+    case 'pill': return <S size={size}><path d="M10.5 3.5a5 5 0 0 1 7 7l-7 7a5 5 0 0 1-7-7z" /><path d="M7 10l7 7" /></S>;
+    case 'sun': return <S size={size}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5" /></S>;
+    case 'heart': return <S size={size}><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></S>;
+    case 'bath': return <S size={size}><path d="M4 12h16v2a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" /><path d="M6 12V6a2 2 0 0 1 4 0" /><path d="M7 19l-1 2M17 19l1 2" /></S>;
+    default: return <S size={size}><path d="m12 3 2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z" /></S>;
+  }
+}
+const ICONS: TrackerIcon[] = ['pill', 'drop', 'wind', 'bath', 'sun', 'heart', 'star'];
+
+// ---------------- Settings → Extra trackers ----------------
+export function ExtrasSettings({ onBack }: { onBack: () => void }) {
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast();
+  if (!ctx) return null;
+  const { baby, allTrackers } = ctx;
+  const preset = (p: 'bath' | 'congestion') => allTrackers.find(t => t.preset === p);
+  const custom = allTrackers.filter(t => !t.preset);
+  return (
+    <Page title="Extra trackers" onBack={onBack}>
+      <p className="muted small">Turn on only what you need. Feed, Poo and Sleep always stay front and centre — extras appear under <strong>Log something else</strong> on Home.</p>
+      <div className="card list">
+        <label className="row"><span className="row-ic xt-ic xt-wet"><IDrop size={20} /></span>
+          <span className="row-main"><span className="row-title">Wet nappies</span><span className="row-sub">Turns “Poo” into “Nappy” with Wet / Poo / Both</span></span>
+          <input type="checkbox" className="switch" checked={!!baby.wet_tracking} onChange={e => { updateBaby(baby.baby_id, { wet_tracking: e.target.checked }); toast(e.target.checked ? 'Wet nappy tracking on' : 'Wet nappy tracking off'); }} /></label>
+        {(['bath', 'congestion'] as const).map(p => (
+          <label className="row" key={p}><span className="row-ic xt-ic"><TrackerIconSvg icon={PRESETS[p].icon} size={20} /></span>
+            <span className="row-main"><span className="row-title">{PRESETS[p].name}</span><span className="row-sub">{PRESETS[p].hint}</span></span>
+            <input type="checkbox" className="switch" checked={!!preset(p)?.enabled} onChange={e => setPreset(baby.baby_id, p, e.target.checked)} /></label>
+        ))}
+      </div>
+      <h2 className="sec-title">Your trackers</h2>
+      {custom.length > 0 && (
+        <div className="card list">{custom.map(t => (
+          <div className="row" key={t.tracker_id}>
+            <span className="row-ic xt-ic"><TrackerIconSvg icon={t.icon} size={20} /></span>
+            <button className="row-main tap" style={{ textAlign: 'left' }} onClick={() => nav.push({ name: 'tracker', id: t.tracker_id })}>
+              <span className="row-title">{t.name}</span><span className="row-sub">{KIND_INFO[t.kind].label}{t.unit ? ` · ${t.unit}` : ''} · tap to edit</span></button>
+            <input type="checkbox" className="switch" aria-label={`${t.name} on`} checked={t.enabled} onChange={e => upsertEntry('trackers', { ...t, enabled: e.target.checked })} />
+          </div>))}
+        </div>
+      )}
+      <button className="btn dashed block" onClick={() => nav.push({ name: 'tracker' })}><IPlus size={18} /> Create your own tracker</button>
+      <p className="muted small">For example Vitamin D (once a day), saline drops (just the time) or pumping (an amount in ml). Trackers are shared with everyone who has access to {baby.name}.</p>
+    </Page>
+  );
+}
+
+// ---------------- Create / edit a tracker ----------------
+export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void }) {
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm();
+  const ex: TrackerDef | undefined = id ? getState().trackers[id] : undefined;
+  const [name, setName] = useState(ex?.name ?? '');
+  const [icon, setIcon] = useState<TrackerIcon>(ex?.icon ?? 'pill');
+  const [kind, setKind] = useState<TrackerKind>(ex?.kind ?? 'daily');
+  const [unit, setUnit] = useState(ex?.unit ?? 'ml');
+  const [err, setErr] = useState<string | null>(null);
+  if (!ctx) return null;
+  const save = () => {
+    setErr(null);
+    const n = name.trim();
+    if (!n) return setErr('Give the tracker a name.');
+    if (n.length > 40) return setErr('Keep the name under 40 characters.');
+    if (kind === 'amount' && !unit.trim()) return setErr('Add a unit, e.g. ml or drops.');
+    if (ctx.allTrackers.some(t => t.tracker_id !== ex?.tracker_id && t.name.toLowerCase() === n.toLowerCase())) return setErr('You already have a tracker with this name.');
+    upsertEntry('trackers', { ...(ex ?? {}), baby_id: ctx.baby.baby_id, name: n, icon, kind: ex ? ex.kind : kind, unit: kind === 'amount' ? unit.trim().slice(0, 12) : null, preset: ex?.preset ?? null, enabled: ex?.enabled ?? true, sort: ex?.sort ?? 10 + ctx.allTrackers.length });
+    toast(ex ? 'Tracker updated' : `${n} added — find it under Log something else`); onDone();
+  };
+  return (
+    <Page title={ex ? 'Edit tracker' : 'New tracker'} onCancel={onDone} className="form-page"
+      right={ex && !ex.preset ? <button className="icon-btn danger" aria-label="Delete tracker" onClick={async () => { if (await confirm({ title: `Delete “${ex.name}”?`, text: 'Its past entries will be hidden too.', ok: 'Delete', danger: true })) { deleteEntry('trackers', ex.tracker_id); toast('Tracker deleted', { label: 'Undo', run: () => restoreEntry('trackers', ex.tracker_id) }); onDone(); } }}><ITrash /></button> : null}>
+      <Field label="Name"><input value={name} maxLength={40} placeholder="e.g. Vitamin D" onChange={e => setName(e.target.value)} disabled={!!ex?.preset} /></Field>
+      <Field label="Icon">
+        <div className="icon-pick" role="radiogroup" aria-label="Icon">{ICONS.map(i => (
+          <button key={i} type="button" role="radio" aria-checked={icon === i} aria-label={i} className={`icb ${icon === i ? 'on' : ''}`} onClick={() => setIcon(i)}><TrackerIconSvg icon={i} size={20} /></button>))}</div>
+      </Field>
+      <Field label="What do you want to record?" hint={ex ? '(can’t change after creating)' : undefined}>
+        <div className="kinds" role="radiogroup" aria-label="Tracker type">
+          {(Object.keys(KIND_INFO) as TrackerKind[]).map(k => (
+            <button key={k} type="button" role="radio" aria-checked={kind === k} disabled={!!ex && ex.kind !== k} className={`kind ${kind === k ? 'on' : ''}`} onClick={() => setKind(k)}>
+              <span className="radio" aria-hidden="true" /><span className="row-main"><span className="row-title">{KIND_INFO[k].label}</span><span className="row-sub">{KIND_INFO[k].hint}</span></span></button>))}
+        </div>
+      </Field>
+      {kind === 'amount' && <Field label="Unit"><input value={unit} maxLength={12} placeholder="ml, drops, °C…" onChange={e => setUnit(e.target.value)} /></Field>}
+      {err && <div className="alert error" role="alert">{err}</div>}
+      <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : 'Add tracker'}</button>
+    </Page>
+  );
+}
+
+// ---------------- Log / edit an extra entry ----------------
+export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: string; entryId?: string; onKey?: string; onDone: () => void }) {
+  const ctx = useBaby(); const toast = useToast();
+  const ex: ExtraEntry | undefined = entryId ? getState().extras[entryId] : undefined;
+  const t: TrackerDef | undefined = getState().trackers[ex?.tracker_id ?? trackerId ?? ''];
+  const tz = ctx?.baby.timezone ?? 'UTC';
+  const [time, setTime] = useState(toLocalInput(ex?.datetime ?? defaultTime(tz, onKey), tz));
+  const [value, setValue] = useState<string>(ex?.value_num != null ? String(ex.value_num) : '');
+  const [mins, setMins] = useState<number | null>(ex?.duration_seconds != null ? Math.round(ex.duration_seconds / 60) : null);
+  const [level, setLevel] = useState<Level | null>(ex?.level ?? null);
+  const [notes, setNotes] = useState(ex?.notes ?? '');
+  const [err, setErr] = useState<string | null>(null);
+  if (!ctx || !t) return null;
+  const save = () => {
+    setErr(null);
+    const iso = fromLocalInput(time, tz);
+    if (new Date(iso).getTime() > Date.now() + 5 * 60000) return setErr('Time can’t be in the future.');
+    const num = value.trim() === '' ? null : Number(value.replace(',', '.'));
+    if (t.kind === 'amount' && (num == null || !isFinite(num) || num < 0)) return setErr(`Enter the amount in ${t.unit}.`);
+    if (t.kind === 'duration' && (mins == null || mins <= 0)) return setErr('Enter how many minutes.');
+    if (t.kind === 'level' && !level) return setErr('Choose a level.');
+    const id = upsertEntry('extras', { ...(ex ?? {}), baby_id: ctx.baby.baby_id, tracker_id: t.tracker_id, datetime: iso,
+      value_num: t.kind === 'amount' ? num : null, duration_seconds: t.kind === 'duration' ? (mins ?? 0) * 60 : null, level: t.kind === 'level' ? level : null, notes: notes.trim() || null });
+    toast(ex ? `${t.name} updated` : `${t.name} logged`, ex ? undefined : { label: 'Undo', run: () => deleteEntry('extras', id) });
+    onDone();
+  };
+  return (
+    <Page title={ex ? `Edit ${t.name}` : t.name} onCancel={onDone} className="form-page"
+      right={ex ? <button className="icon-btn danger" aria-label="Delete entry" onClick={() => { deleteEntry('extras', ex.extra_id); toast('Entry deleted', { label: 'Undo', run: () => restoreEntry('extras', ex.extra_id) }); onDone(); }}><ITrash /></button> : null}>
+      <Field label="Time"><input type="datetime-local" value={time} onChange={e => setTime(e.target.value)} /></Field>
+      {t.kind === 'amount' && <Field label={`Amount (${t.unit})`}><input inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} /></Field>}
+      {t.kind === 'duration' && <Field label="Duration"><Stepper label="duration" value={mins} onChange={setMins} step={5} max={600} unit="min" /></Field>}
+      {t.kind === 'level' && <Field label="Level"><Segmented label="Level" value={level} onChange={setLevel} options={LEVELS.map(l => ({ value: l, label: cap(l) }))} /></Field>}
+      <Field label="Notes" hint="(optional)"><textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      {t.preset === 'congestion' && <div className="alert notice soft"><IInfo size={18} /><span>This is a record only. If you’re worried about your baby’s breathing or health, contact your GP, consultatiebureau or call 112 in an emergency.</span></div>}
+      {err && <div className="alert error" role="alert">{err}</div>}
+      <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : `Save ${t.name}`}</button>
+    </Page>
+  );
+}
+
+// ---------------- Home: "Log something else" sheet ----------------
+export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(30000);
+  if (!ctx) return null;
+  const { baby, trackers, extras, data, prefs } = ctx; const tz = baby.timezone;
+  const today = todayKey(tz);
+  const wets = [...(data.wet ?? []), ...data.poos.filter(p => p.nappy_type === 'both')].sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime));
+  const wetToday = wets.filter(p => dateKey(p.datetime, tz) === today).length;
+  const lastWet = wets[wets.length - 1];
+  const tap = (t: TrackerDef) => {
+    if (!oneTap(t)) { onClose(); nav.push({ name: 'extra', trackerId: t.tracker_id }); return; }
+    const id = logExtraNow(t);
+    toast(t.kind === 'daily' ? `${t.name} ✓ logged` : `${t.name} logged`, { label: 'Undo', run: () => deleteEntry('extras', id) });
+    onClose();
+  };
+  return (
+    <Sheet open={open} onClose={onClose} title="Log something else">
+      <div className="tiles">
+        {baby.wet_tracking && (
+          <button className="tile" onClick={() => { const id = logWetNow(baby.baby_id); toast('Wet nappy logged', { label: 'Undo', run: () => deleteEntry('poos', id) }); onClose(); }}>
+            <span className="tile-ic xt-wet"><IDrop size={22} /></span><span className="tile-n">Wet nappy</span>
+            <span className="tile-s">{wetToday} today{lastWet ? ` · ${formatAgo(lastWet.datetime, now)}` : ''}</span></button>
+        )}
+        {trackers.map(t => { const st = tileStatus(t, extras, tz, prefs.time_format, now); return (
+          <button key={t.tracker_id} className={`tile ${st.done ? 'done' : ''}`} onClick={() => tap(t)} aria-label={`${t.name}: ${st.text}. ${oneTap(t) ? 'Tap to log now' : 'Tap to add'}`}>
+            <span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
+        <button className="tile tile-manage" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>
+          <span className="tile-ic"><IPlus size={22} /></span><span className="tile-n">Manage</span><span className="tile-s">Add or hide</span></button>
+      </div>
+      <p className="muted small center">One tap logs it now. Tap the entry in today’s activity to change the time or add a note.</p>
+    </Sheet>
+  );
+}
+
+export { Row, IChevron };

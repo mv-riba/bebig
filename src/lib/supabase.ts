@@ -75,16 +75,19 @@ const REMOTE: Record<Table, { table: string; id: string }> = {
   babies: { table: 'baby_profiles', id: 'baby_id' }, access: { table: 'baby_access', id: 'access_id' },
   feeds: { table: 'feeding_entries', id: 'feed_id' }, poos: { table: 'poo_entries', id: 'poo_id' },
   sleeps: { table: 'sleep_entries', id: 'sleep_id' }, growth: { table: 'growth_measurements', id: 'measurement_id' },
+  trackers: { table: 'extra_trackers', id: 'tracker_id' }, extras: { table: 'extra_entries', id: 'extra_id' },
 };
 const COLUMNS: Record<Table, string[]> = {
-  babies: ['baby_id', 'name', 'date_of_birth', 'time_of_birth', 'sex', 'gestational_age_weeks', 'gestational_age_days', 'timezone', 'photograph_url', 'feeding_preference', 'birth_weight_grams', 'birth_length_mm', 'birth_head_circumference_mm', 'created_by', 'created_at', 'updated_at'],
+  babies: ['baby_id', 'name', 'date_of_birth', 'time_of_birth', 'sex', 'gestational_age_weeks', 'gestational_age_days', 'timezone', 'photograph_url', 'feeding_preference', 'wet_tracking', 'birth_weight_grams', 'birth_length_mm', 'birth_head_circumference_mm', 'created_by', 'created_at', 'updated_at'],
   access: ['access_id', 'baby_id', 'user_id', 'invited_email', 'role', 'invitation_status', 'invited_by', 'created_at', 'updated_at'],
   feeds: ['feed_id', 'baby_id', 'feeding_type', 'start_datetime', 'end_datetime', 'duration_seconds', 'breast_side', 'left_duration_seconds', 'right_duration_seconds', 'quantity_ml', 'observations', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
-  poos: ['poo_id', 'baby_id', 'datetime', 'colour', 'size', 'texture', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
+  poos: ['poo_id', 'baby_id', 'datetime', 'nappy_type', 'colour', 'size', 'texture', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   sleeps: ['sleep_id', 'baby_id', 'start_datetime', 'end_datetime', 'duration_seconds', 'status', 'pauses', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   growth: ['measurement_id', 'baby_id', 'measurement_date', 'weight_grams', 'length_mm', 'head_circumference_mm', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
+  trackers: ['tracker_id', 'baby_id', 'name', 'icon', 'kind', 'unit', 'preset', 'enabled', 'sort', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
+  extras: ['extra_id', 'baby_id', 'tracker_id', 'datetime', 'duration_seconds', 'value_num', 'level', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
 };
-const pick = (t: Table, row: any) => Object.fromEntries(COLUMNS[t].filter(c => c in row).map(c => [c, row[c] ?? null]));
+const pick = (t: Table, row: any) => { const o: any = Object.fromEntries(COLUMNS[t].filter(c => c in row).map(c => [c, row[c] ?? null])); if (t === 'poos' && !o.nappy_type) o.nappy_type = 'poo'; if (t === 'babies' && o.wet_tracking == null) o.wet_tracking = false; return o; };
 
 // ---------- push ----------
 let pushing = false;
@@ -145,6 +148,7 @@ async function pull() {
         if (!local || new Date(r.updated_at) >= new Date(local.updated_at)) {
           if (t === 'sleeps' && typeof r.pauses === 'string') r.pauses = JSON.parse(r.pauses);
           if (t === 'feeds') { r.observations = r.observations || []; if (r.quantity_ml != null) r.quantity_ml = Number(r.quantity_ml); }
+          if (t === 'extras' && r.value_num != null) r.value_num = Number(r.value_num);
           target[r[idf]] = r;
         }
       }
@@ -158,7 +162,7 @@ async function pull() {
     // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
     for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) {
       delete s.babies[id];
-      for (const t of ['feeds', 'poos', 'sleeps', 'growth'] as const) for (const [k, v] of Object.entries(s[t] as any)) if ((v as any).baby_id === id) delete (s[t] as any)[k];
+      for (const t of ['feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const) for (const [k, v] of Object.entries(s[t] as any)) if ((v as any).baby_id === id) delete (s[t] as any)[k];
       for (const a of Object.values(s.access)) if (a.baby_id === id && a.user_id === me) delete s.access[a.access_id];
     }
     s.lastSyncedAt = new Date().toISOString();
@@ -222,6 +226,8 @@ export function startRemoteSync() {
   void orig;
   setInterval(() => { if (getState().outbox.length && !pushing) { clearTimeout(debounce); debounce = setTimeout(push, 300); } }, 1000);
   timer = setInterval(kick, 15000);
+  // changes the server rejected (e.g. before a database update was applied) are retried every 5 minutes
+  setInterval(() => { if (auth && navigator.onLine && getState().syncFailed?.length) { retryFailedSync(); kick(); } }, 5 * 60000);
   if (auth) { if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
   return () => clearInterval(timer);
 }

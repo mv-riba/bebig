@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
+import { MoreSheet } from './Extras';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
 import { useNow, Empty } from '../ui/ui';
 import { IBottle, IPoo, IMoon, ISparkle, IChevron, IPlus, ICalendar, IBreast } from '../ui/icons';
-import { Timeline, buildTimeline, TItem } from '../ui/Timeline';
+import { Timeline, buildTimeline, TItem, openItem, extrasForDay } from '../ui/Timeline';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween } from '../lib/time';
@@ -17,6 +18,7 @@ export function BabyAvatar({ src, name, size = 64 }: { src?: string | null; name
 
 export function Home() {
   const ctx = useBaby(); const nav = useNav(); const now = useNow(10000);
+  const [more, setMore] = useState(false);
   const me = useStore(s => s.users[currentUserId() ?? '']);
   const insight = useMemo(() => ctx ? buildInsights(ctx.data, ctx.prefs.time_format, now) : null, [ctx, Math.floor(now / 60000)]);
   if (!ctx) return null;
@@ -26,8 +28,11 @@ export function Home() {
   const lf = lastFeed(data), lp = lastPoo(data), ls = lastCompletedSleep(data);
   const h = zonedParts(new Date(now), tz).h;
   const greet = h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-  const items = buildTimeline(stats.feeds, stats.poos, stats.sleeps, 'desc');
-  const open = (i: TItem) => nav.push({ name: i.kind, entryId: (i.e as any)[i.kind === 'feed' ? 'feed_id' : i.kind === 'poo' ? 'poo_id' : 'sleep_id'] });
+  const showExtras = prefs.show_extras !== false;
+  const items = buildTimeline(stats.feeds, stats.poos, stats.sleeps, 'desc', showExtras ? { wets: stats.wets, extras: extrasForDay(ctx, tz, today), trackers: ctx.allTrackers } : undefined);
+  const open = (i: TItem) => openItem(nav, i);
+  const nappy = !!baby.wet_tracking;
+  const hasExtras = nappy || ctx.trackers.length > 0;
   const topInsight = insight?.observations[0];
 
   return (
@@ -50,8 +55,9 @@ export function Home() {
         </button>
         <button className="sum-card sum-poo" onClick={() => nav.push({ name: 'poo' })} aria-label={lp ? `Last poo ${formatTime(lp.datetime, tz, fmt)}, ${formatAgo(lp.datetime, now)}. Log poo` : 'No poos yet. Log poo'}>
           <span className="sum-ic"><IPoo size={30} /></span>
-          <span className="sum-label">Poo</span>
-          {lp ? <><span className="sum-time">{formatTime(lp.datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lp.datetime, now)})</span></> : <span className="sum-ago">None yet</span>}
+          <span className="sum-label">{nappy ? 'Nappy' : 'Poo'}</span>
+          {lp ? <><span className="sum-time">{formatTime(lp.datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lp.datetime, now)})</span></> : <span className="sum-ago">{nappy ? 'No poo yet' : 'None yet'}</span>}
+          {nappy && <span className="sum-ago sum-wet">{stats.wetCount} wet today</span>}
         </button>
         <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended ${formatAgo(ls.end_datetime!, now)}. Log sleep` : 'No sleep yet. Log sleep'}>
           <span className="sum-ic"><IMoon size={30} /></span>
@@ -63,9 +69,11 @@ export function Home() {
 
       <section className="quick" aria-label="Quick actions">
         <button className="btn primary" onClick={() => nav.push({ name: 'feed' })}><IPlus size={18} /> Log Feed</button>
-        <button className="btn primary" onClick={() => nav.push({ name: 'poo' })}><IPlus size={18} /> Log Poo</button>
+        <button className="btn primary" onClick={() => nav.push({ name: 'poo' })}><IPlus size={18} /> {nappy ? 'Log Nappy' : 'Log Poo'}</button>
         <button className="btn primary" onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })}>{active ? 'Sleep timer' : <><IPlus size={18} /> Log Sleep</>}</button>
       </section>
+      {hasExtras && <button className="more-pill" onClick={() => setMore(true)}><IPlus size={16} /> Log something else</button>}
+      <MoreSheet open={more} onClose={() => setMore(false)} />
 
       {topInsight && (
         <button className="card insight-card" onClick={() => nav.setTab('insights')}>
@@ -82,7 +90,7 @@ export function Home() {
         <div className="sec-head"><h2>Today’s activity</h2><button className="link" onClick={() => nav.openDay(today)}><ICalendar size={16} /> Full day</button></div>
         {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} />
           : <Empty title="Nothing logged yet today" text="Use the buttons above to log a feed, poo or sleep. It only takes a couple of taps." />}
-        {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feeds · {stats.pooCount} poos · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
+        {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feeds · {stats.pooCount} poos{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
       </section>
     </div>
   );

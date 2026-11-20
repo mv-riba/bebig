@@ -11,7 +11,7 @@ export function createDemoBaby() {
   const baby_id = createBaby({
     name: 'Emma (sample)', date_of_birth: dob, time_of_birth: '06:40', sex: 'female', timezone: tz,
     gestational_age_weeks: 39, gestational_age_days: 2, feeding_preference: 'combination',
-    birth_weight_grams: 3250, birth_length_mm: 500, birth_head_circumference_mm: 340, photograph_url: null,
+    birth_weight_grams: 3250, birth_length_mm: 500, birth_head_circumference_mm: 340, photograph_url: null, wet_tracking: true,
   });
   const uid = currentUserId()!; const r = rng(42); const t0 = nowIso();
   const now = Date.now();
@@ -54,6 +54,17 @@ export function createDemoBaby() {
         const id = uuid();
         s.sleeps[id] = { ...audit, sleep_id: id, start_datetime: new Date(st).toISOString(), end_datetime: new Date(en).toISOString(), duration_seconds: Math.round((en - st) / 1000), status: 'completed', pauses: [], notes: null };
       }
+    }
+    // extras: Bath preset, a custom Vitamin D tracker, wet nappies
+    const bathId = uuid(), vitId = uuid();
+    s.trackers[bathId] = { ...audit, tracker_id: bathId, name: 'Bath', icon: 'bath', kind: 'event', unit: null, preset: 'bath', enabled: true, sort: 1 };
+    s.trackers[vitId] = { ...audit, tracker_id: vitId, name: 'Vitamin D', icon: 'pill', kind: 'daily', unit: null, preset: null, enabled: true, sort: 10 };
+    for (let back = 9; back >= 0; back--) {
+      const ds = dayStart(addDays(today, -back), tz).getTime();
+      const vt = ds + (8 * 60 + r() * 40) * 60000;
+      if (vt < now && back !== 3) { const id = uuid(); s.extras[id] = { ...audit, extra_id: id, tracker_id: vitId, datetime: new Date(vt).toISOString(), notes: null }; }
+      if (back % 2 === 0) { const bt = ds + (19 * 60 + r() * 30) * 60000; if (bt < now) { const id = uuid(); s.extras[id] = { ...audit, extra_id: id, tracker_id: bathId, datetime: new Date(bt).toISOString(), notes: null }; } }
+      for (let k = 0; k < 6; k++) { const wt = ds + (1 + k * 3.7 + r()) * 3600e3; if (wt < now) { const id = uuid(); s.poos[id] = { ...audit, poo_id: id, datetime: new Date(wt).toISOString(), nappy_type: 'wet', colour: null, size: null, texture: null, notes: null }; } }
     }
     for (const [days, w, l, h] of [[5, 3150, null, null], [12, 3480, 515, 352], [19, 3790, 525, 361]] as const) {
       const id = uuid();

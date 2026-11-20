@@ -19,7 +19,7 @@ export function Assistant() {
   const ask = async (text: string) => {
     if (!text.trim()) return;
     setQ('');
-    let replies = answer(text, ctx.data, ctx.growth, ctx.prefs.time_format);
+    let replies = answer(text, ctx.data, ctx.growth, ctx.prefs.time_format, Date.now(), { trackers: ctx.allTrackers, extras: ctx.extras });
     if (syncMode() === 'remote' && ctx.prefs.ai_consent && navigator.onLine) {
       const { phraseAnswer } = await import('../lib/supabase');
       replies = await Promise.all(replies.map(async r => r.kind === 'safety' ? r : { ...r, content: await phraseAnswer(ctx.baby.baby_id, text, r.content, r.kind) }));

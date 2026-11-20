@@ -201,6 +201,35 @@ export function buildInsights(d: Data, fmt: TimeFormat = '24h', now = Date.now()
         evidence_level: classify(pooDays.size, within, within / lags.length), observation_count: within, days_covered: pooDays.size,
       });
     }
+    // intake between bowel movements: how many feeds (and, for bottle-only stretches, how much milk) came between one poo and the next
+    const fs = sortedFeeds(d); const ps = poos;
+    const gaps: { feeds: number; ml: number; breast: boolean }[] = [];
+    for (let i = 1; i < ps.length; i++) {
+      const a = new Date(ps[i - 1].datetime).getTime(), b = new Date(ps[i].datetime).getTime();
+      if (b - a > 36 * 3600e3) continue; // likely missing logs
+      const between = fs.filter(f => { const x = new Date(f.start_datetime).getTime(); return x > a && x <= b; });
+      gaps.push({ feeds: between.length, ml: between.reduce((s, f) => s + (f.feeding_type === 'breast' ? 0 : f.quantity_ml || 0), 0), breast: between.some(f => f.feeding_type === 'breast') });
+    }
+    const counted = gaps.filter(g => g.feeds > 0);
+    if (counted.length >= 5) {
+      const c = counted.map(g => g.feeds); const med = median(c)!; const lo = Math.round(quantile(c, 0.25)!), hi = Math.round(quantile(c, 0.75)!);
+      const within = c.filter(x => x >= lo && x <= hi).length;
+      if (within / c.length >= 0.6) observations.push({
+        ...base, insight_id: 'poo-after-feeds', insight_type: 'observation', category: 'poo', title: 'Feeds between bowel movements',
+        description: `Bowel movements have usually come after ${lo === hi ? `${lo}` : `${lo}–${hi}`} feed${hi === 1 ? '' : 's'} since the previous one (${within} of ${c.length} times, median ${med}). This shows a timing pattern, not that feeding causes it.`,
+        evidence_level: classify(pooDays.size, c.length, within / c.length), observation_count: c.length, days_covered: pooDays.size,
+      });
+    }
+    const bottle = gaps.filter(g => !g.breast && g.ml > 0).map(g => g.ml);
+    if (bottle.length >= 5) {
+      const med = median(bottle)!; const lo = roundTo(quantile(bottle, 0.25)!, 10), hi = roundTo(quantile(bottle, 0.75)!, 10);
+      const within = bottle.filter(x => x >= lo - 5 && x <= hi + 5).length;
+      if ((hi - lo) / Math.max(1, med) <= 0.5) observations.push({
+        ...base, insight_id: 'poo-after-volume', insight_type: 'observation', category: 'poo', title: 'Bottle volume between bowel movements',
+        description: `When only bottles were given in between, a bowel movement usually followed after about ${lo === hi ? `${lo}` : `${lo}–${hi}`} ml since the previous one (${within} of ${bottle.length} times). An association in your records, not a rule.`,
+        evidence_level: classify(pooDays.size, bottle.length, within / bottle.length), observation_count: bottle.length, days_covered: pooDays.size,
+      });
+    } else if (gaps.some(g => !g.breast && g.ml > 0)) needs.push('Volume patterns appear after 5+ stretches between bowel movements with only bottle feeds logged (with ml).');
   } else needs.push(`Log bowel movements on at least ${MIN_DAYS} days (${pooDays.size} so far) to see patterns.`);
 
   // ================= PREDICTIONS =================

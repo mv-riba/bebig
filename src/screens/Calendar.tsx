@@ -3,7 +3,11 @@ import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
 import { useNow, Empty, Row } from '../ui/ui';
 import { IBack, IChevron, ICalendar, IBottle, IPoo, IMoon, IChart, IPlus, IScale } from '../ui/icons';
-import { Timeline, buildTimeline, TItem } from '../ui/Timeline';
+import { Timeline, buildTimeline, TItem, openItem, extrasForDay } from '../ui/Timeline';
+import { daySummary } from '../lib/extras';
+import { TrackerIconSvg } from './Extras';
+import { updatePrefs } from '../lib/store';
+import { IDrop } from '../ui/icons';
 import { dayStats } from '../lib/calc';
 import { todayKey, parseKey, daysInMonth, weekdayIndex, monthName, formatDateKey, formatDuration, pad, dateKey } from '../lib/time';
 import { toDisplay } from '../lib/growth';
@@ -38,8 +42,18 @@ export function Calendar() {
   while (cells.length % 7) cells.push(null);
   const move = (d: number) => setView(v => { let m = v.m + d, y = v.y; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return { y, m }; });
   const st = dayStats(data, sel, now);
-  const items = buildTimeline(st.feeds, st.poos, st.sleeps, 'asc');
-  const open = (i: TItem) => nav.push({ name: i.kind, entryId: (i.e as any)[i.kind === 'feed' ? 'feed_id' : i.kind === 'poo' ? 'poo_id' : 'sleep_id'] });
+  const showExtras = prefs.show_extras !== false;
+  const dayExtras = extrasForDay(ctx, tz, sel);
+  const items = buildTimeline(st.feeds, st.poos, st.sleeps, 'asc', showExtras ? { wets: st.wets, extras: dayExtras, trackers: ctx.allTrackers } : undefined);
+  const open = (i: TItem) => openItem(nav, i);
+  const nappy = !!baby.wet_tracking;
+  // Extras card: every enabled tracker (plus disabled ones that have entries this day) and wet nappies
+  const extraRows = [
+    ...(nappy || st.wetCount ? [{ id: 'wet', icon: <IDrop size={16} />, name: 'Wet nappies', value: String(st.wetCount), add: () => nav.push({ name: 'poo', onKey: sel }) }] : []),
+    ...ctx.allTrackers.filter(t => t.enabled || dayExtras.some(e => e.tracker_id === t.tracker_id)).map(t => ({ id: t.tracker_id, icon: <TrackerIconSvg icon={t.icon} size={16} />, name: t.name,
+      value: daySummary(t, ctx.extras, tz, sel, fmt) ?? '—', add: () => nav.push({ name: 'extra', trackerId: t.tracker_id, onKey: sel }) })),
+  ];
+  const hasMinor = st.wets.length > 0 || dayExtras.length > 0;
   const meas = growth.filter(g => g.measurement_date === sel);
   const future = sel > today; const beforeBirth = sel < baby.date_of_birth;
 
@@ -56,13 +70,13 @@ export function Calendar() {
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <span key={d} className="cal-wd" aria-hidden="true">{d}</span>)}
           {cells.map((k, i) => k ? (
             <button key={k} role="gridcell" aria-selected={k === sel} aria-label={`${formatDateKey(k)}${marks.has(k) ? ', has records' : ''}`}
-              className={`cal-day ${k === sel ? 'sel' : ''} ${k === today ? 'today' : ''} ${k > today ? 'future' : ''}`} onClick={() => setSel(k)}>
-              <span>{Number(k.slice(8))}</span>
-              <span className="cal-dots">{['feed', 'poo', 'sleep', 'growth'].map(t => marks.get(k)?.has(t) ? <i key={t} className={`dot dot-${t}`} /> : null)}</span>
+              className={`cal-day ${k === sel ? 'sel' : ''} ${k === today ? 'today' : ''} ${k > today ? 'future' : ''} ${marks.get(k)?.has('growth') ? 'has-growth' : ''}`} onClick={() => setSel(k)}>
+              <span className="cal-num">{Number(k.slice(8))}</span>
+              <span className="cal-dots">{['feed', 'poo', 'sleep'].map(t => marks.get(k)?.has(t) ? <i key={t} className={`dot dot-${t}`} /> : null)}</span>
             </button>
           ) : <span key={'e' + i} />)}
         </div>
-        <div className="cal-key" aria-hidden="true"><span><i className="dot dot-feed" />Feed</span><span><i className="dot dot-poo" />Poo</span><span><i className="dot dot-sleep" />Sleep</span><span><i className="dot dot-growth" />Growth</span></div>
+        <div className="cal-key" aria-hidden="true"><span><i className="dot dot-feed" />Feed</span><span><i className="dot dot-poo" />{nappy ? 'Nappy' : 'Poo'}</span><span><i className="dot dot-sleep" />Sleep</span><span><i className="ring-key" />Growth</span></div>
         {(view.y !== parseKey(today).y || view.m !== parseKey(today).m || sel !== today) && <button className="link small center-block" onClick={() => { setSel(today); const { y, m } = parseKey(today); setView({ y, m }); }}>Return to today</button>}
       </div>
 
@@ -86,11 +100,23 @@ export function Calendar() {
               ))}
             </div>
           )}
+          {extraRows.length > 0 && (
+            <details className="card extras-card" open>
+              <summary><span>Extras</span><span className="muted small">{extraRows.filter(r => r.value !== '—' && r.value !== '0').length} recorded</span></summary>
+              {extraRows.map(r => (
+                <button key={r.id} className="xrow" onClick={r.add} aria-label={`Add ${r.name} for this day`}>
+                  <span className="xrow-ic">{r.icon}</span><span className="xrow-n">{r.name}</span><span className="xrow-v">{r.value}</span><IPlus size={14} />
+                </button>))}
+            </details>
+          )}
+          {hasMinor && (
+            <label className="extras-toggle"><span>Show extras in timeline</span><input type="checkbox" className="switch" checked={showExtras} onChange={e => updatePrefs({ show_extras: e.target.checked })} /></label>
+          )}
           {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} /> : <Empty title="No activity recorded" text={beforeBirth ? undefined : 'Missed something? You can add it now.'} />}
           {!beforeBirth && (
             <div className="add-row" aria-label="Add entry for this day">
               <button className="chip" onClick={() => nav.push({ name: 'feed', onKey: sel })}><IPlus size={14} /> Feed</button>
-              <button className="chip" onClick={() => nav.push({ name: 'poo', onKey: sel })}><IPlus size={14} /> Poo</button>
+              <button className="chip" onClick={() => nav.push({ name: 'poo', onKey: sel })}><IPlus size={14} /> {nappy ? 'Nappy' : 'Poo'}</button>
               <button className="chip" onClick={() => nav.push({ name: 'sleep', onKey: sel })}><IPlus size={14} /> Sleep</button>
               <button className="chip" onClick={() => nav.push({ name: 'measure', onKey: sel })}><IPlus size={14} /> Growth</button>
             </div>

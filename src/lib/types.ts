@@ -27,6 +27,7 @@ export interface BabyProfile {
   timezone: string; // IANA
   photograph_url?: string | null; // data URL locally; storage path in Supabase
   feeding_preference: FeedingPreference;
+  wet_tracking?: boolean; // when on, the Poo log becomes "Nappy" with Wet / Poo / Both
   birth_weight_grams?: number | null;
   birth_length_mm?: number | null;
   birth_head_circumference_mm?: number | null;
@@ -74,9 +75,11 @@ export type PooColour = 'yellow' | 'green' | 'brown' | 'pale' | 'black' | 'red' 
 export type PooSize = 'small' | 'medium' | 'large';
 export type PooTexture = 'soft' | 'loose' | 'firm' | 'other';
 
+export type NappyType = 'poo' | 'wet' | 'both';
 export interface PooEntry extends Audited {
   poo_id: ID;
   datetime: string;
+  nappy_type?: NappyType | null; // null/undefined = 'poo' (records from before wet tracking)
   colour?: PooColour | null;
   size?: PooSize | null;
   texture?: PooTexture | null;
@@ -123,6 +126,7 @@ export interface UserPrefs {
   notifications: { feeding: boolean; sleep: boolean; custom: boolean; feeding_interval_min: number };
   language: 'en';
   ai_consent: boolean;
+  show_extras?: boolean; // show extras & wet nappies in timelines (default on)
 }
 
 export type EntryKind = 'feed' | 'poo' | 'sleep' | 'growth';
@@ -145,4 +149,29 @@ export interface AIInsight {
   uncertainty_minutes?: number;
   limited_data_note?: string;
   histogram?: number[];
+}
+
+// ---------- Extra trackers (optional, opt-in) ----------
+/** What a tracker records: just the time, a once-a-day check-off, a number with a unit, a duration, or a level. */
+export type TrackerKind = 'event' | 'daily' | 'amount' | 'duration' | 'level';
+export type TrackerIcon = 'drop' | 'wind' | 'pill' | 'sun' | 'heart' | 'star' | 'bath';
+export interface TrackerDef extends Audited {
+  tracker_id: ID;
+  name: string;
+  icon: TrackerIcon;
+  kind: TrackerKind;
+  unit?: string | null; // for 'amount'
+  preset?: 'bath' | 'congestion' | null;
+  enabled: boolean;
+  sort: number;
+}
+export type Level = 'mild' | 'moderate' | 'strong';
+export interface ExtraEntry extends Audited {
+  extra_id: ID;
+  tracker_id: ID;
+  datetime: string;
+  duration_seconds?: number | null; // 'duration'
+  value_num?: number | null; // 'amount'
+  level?: Level | null; // 'level'
+  notes?: string | null;
 }

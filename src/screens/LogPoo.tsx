@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Page, Segmented, Field, useToast, Wave } from '../ui/ui';
-import { IInfo, ITrash } from '../ui/icons';
+import { IInfo, ITrash, IDrop, IPoo } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { upsertEntry, deleteEntry, restoreEntry, getState } from '../lib/store';
 import { toLocalInput, fromLocalInput, daysBetween, dateKey } from '../lib/time';
-import type { PooColour, PooEntry, PooSize, PooTexture } from '../lib/types';
+import type { PooColour, PooEntry, PooSize, PooTexture, NappyType } from '../lib/types';
 import { defaultTime } from './LogFeed';
 
 export const COLOURS: { value: PooColour; label: string; hex: string }[] = [
@@ -37,25 +37,32 @@ export function LogPoo({ entryId, onKey, onDone }: { entryId?: string; onKey?: s
   const [size, setSize] = useState<PooSize | null>(existing?.size ?? null);
   const [texture, setTexture] = useState<PooTexture | null>(existing?.texture ?? null);
   const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [ntype, setNtype] = useState<NappyType>(existing?.nappy_type ?? 'poo');
   const [err, setErr] = useState<string | null>(null);
   if (!ctx) return null;
   const { baby } = ctx;
   const iso = (() => { try { return fromLocalInput(time, tz); } catch { return new Date().toISOString(); } })();
   const ageDays = daysBetween(baby.date_of_birth, dateKey(iso, tz));
-  const notice = healthNotice(colour, ageDays);
+  const nappy = !!baby.wet_tracking || (existing?.nappy_type != null && existing.nappy_type !== 'poo');
+  const wetOnly = nappy && ntype === 'wet';
+  const notice = wetOnly ? null : healthNotice(colour, ageDays);
+  const noun = !nappy ? 'Poo' : 'Nappy';
 
   const save = () => {
     setErr(null);
     if (new Date(iso).getTime() > Date.now() + 5 * 60000) return setErr('Time can’t be in the future.');
-    const id = upsertEntry('poos', { ...(existing ? { poo_id: existing.poo_id } : {}), baby_id: baby.baby_id, datetime: iso, colour, size, texture, notes: notes.trim() || null });
-    toast(existing ? 'Poo updated' : 'Poo saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('poos', id) });
+    const id = upsertEntry('poos', { ...(existing ? { poo_id: existing.poo_id } : {}), baby_id: baby.baby_id, datetime: iso, nappy_type: nappy ? ntype : 'poo',
+      colour: wetOnly ? null : colour, size: wetOnly ? null : size, texture: wetOnly ? null : texture, notes: notes.trim() || null });
+    toast(existing ? `${noun} updated` : wetOnly ? 'Wet nappy saved' : `${noun} saved`, existing ? undefined : { label: 'Undo', run: () => deleteEntry('poos', id) });
     onDone();
   };
 
   return (
-    <Page title={existing ? 'Edit Poo' : 'Add Poo'} onCancel={onDone} className="form-page"
+    <Page title={existing ? `Edit ${noun}` : `Add ${noun}`} onCancel={onDone} className="form-page"
       right={existing ? <button className="icon-btn danger" aria-label="Delete entry" onClick={() => { deleteEntry('poos', existing.poo_id); toast('Entry deleted', { label: 'Undo', run: () => restoreEntry('poos', existing.poo_id) }); onDone(); }}><ITrash /></button> : null}>
+      {nappy && <Segmented size="lg" label="Nappy type" value={ntype} onChange={setNtype} options={[{ value: 'wet', label: 'Wet', icon: <IDrop size={26} /> }, { value: 'poo', label: 'Poo', icon: <IPoo size={26} /> }, { value: 'both', label: 'Both', icon: <span className="both-ic"><IDrop size={20} /><IPoo size={20} /></span> }]} />}
       <Field label="Time"><input type="datetime-local" value={time} onChange={e => setTime(e.target.value)} /></Field>
+      {!wetOnly && <>
       <Field label="Colour" hint={colour ? `· ${colourLabel(colour)}` : '(optional)'}>
         <div className="swatches" role="radiogroup" aria-label="Colour">
           {COLOURS.map(c => (
@@ -68,11 +75,12 @@ export function LogPoo({ entryId, onKey, onDone }: { entryId?: string; onKey?: s
       </Field>
       <Field label="Size" hint="(optional)"><Segmented label="Size" value={size} onChange={v => setSize(v === size ? null : v)} options={[{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }]} /></Field>
       <Field label="Texture" hint="(optional)"><Segmented label="Texture" value={texture} onChange={v => setTexture(v === texture ? null : v)} options={[{ value: 'soft', label: 'Soft' }, { value: 'loose', label: 'Loose/runny' }, { value: 'firm', label: 'Firm' }, { value: 'other', label: 'Other' }]} /></Field>
-      <Field label="Notes" hint="(optional)"><textarea rows={3} placeholder="e.g. unusual colour…" value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      </>}
+      <Field label="Notes" hint="(optional)"><textarea rows={3} placeholder={wetOnly ? 'optional' : 'e.g. unusual colour…'} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
       {notice && <div className="alert notice" role="note"><IInfo size={20} /><span>{notice}</span></div>}
-      {!notice && <p className="muted small">Colour alone can’t tell whether something is normal. If anything about your baby worries you, contact your healthcare provider.</p>}
+      {!notice && !wetOnly && <p className="muted small">Colour alone can’t tell whether something is normal. If anything about your baby worries you, contact your healthcare provider.</p>}
       {err && <div className="alert error" role="alert">{err}</div>}
-      <button className="btn primary block" onClick={save}>{existing ? 'Save changes' : 'Save Poo'}</button>
+      <button className="btn primary block" onClick={save}>{existing ? 'Save changes' : `Save ${wetOnly ? 'Wet nappy' : noun}`}</button>
       <Wave tone="sage" />
     </Page>
   );

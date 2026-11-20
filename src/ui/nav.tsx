@@ -5,6 +5,9 @@ export type Route =
   | { name: 'feed' | 'poo' | 'sleep'; entryId?: string; onKey?: string }
   | { name: 'measure'; id?: string; onKey?: string }
   | { name: 'growth' }
+  | { name: 'tracker'; id?: string }
+  | { name: 'extra'; trackerId?: string; entryId?: string; onKey?: string }
+  | { name: 'extras-settings' }
   | { name: 'profile' | 'feeding-pref' | 'sharing' | 'prefs' | 'data' | 'privacy' | 'account' };
 
 export interface Nav { tab: Tab; setTab: (t: Tab) => void; push: (r: Route) => void; pop: () => void; calendarKey: string | null; openDay: (k: string) => void; selectDay: (k: string) => void }
