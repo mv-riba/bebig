@@ -31,6 +31,7 @@ export interface State {
   trackers: Record<string, TrackerDef>;
   extras: Record<string, ExtraEntry>;
   feedTimers: Record<string, FeedTimer>; // by baby_id
+  extraTimers: Record<string, ExtraTimer>; // by tracker_id ("How long" trackers), kept on this device
   prefs: Record<string, UserPrefs>; // by user_id
   selectedBaby: Record<string, string>; // user_id -> baby_id
   chats: Record<string, ChatMessage[]>; // `${user}:${baby}`
@@ -54,14 +55,14 @@ export const defaultPrefs = (): UserPrefs => ({
 function empty(): State {
   return {
     version: 1, session: null, users: {}, credentials: {}, babies: {}, access: {}, feeds: {}, poos: {}, sleeps: {},
-    growth: {}, trackers: {}, extras: {}, feedTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null,
+    growth: {}, trackers: {}, extras: {}, feedTimers: {}, extraTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null,
   };
 }
 
 function load(): State {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.syncFailed ??= []; return s; }
+    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.extraTimers ??= {}; s.syncFailed ??= []; return s; }
   } catch { /* corrupted or unavailable storage */ }
   return empty();
 }
@@ -464,3 +465,28 @@ export function requireReauth(message: string) {
   setSession(null);
 }
 export const unsyncedCount = (s: State = state) => s.outbox.length + (s.syncFailed?.length ?? 0);
+
+// ---------------- Timers for "How long" extra trackers (persisted, survive app close) ----------------
+export interface ExtraTimer { baby_id: string; tracker_id: string; started_at: string; acc_seconds: number; segment_started_at: string | null }
+export function extraTimerSeconds(t: ExtraTimer, now = Date.now()) {
+  return t.acc_seconds + (t.segment_started_at ? Math.max(0, (now - new Date(t.segment_started_at).getTime()) / 1000) : 0);
+}
+export function startExtraTimer(baby_id: string, tracker_id: string) {
+  assertAccess(baby_id); const t = nowIso();
+  setState(s => { s.extraTimers[tracker_id] = { baby_id, tracker_id, started_at: t, acc_seconds: 0, segment_started_at: t }; });
+}
+export function pauseExtraTimer(tracker_id: string) {
+  setState(s => { const t = s.extraTimers[tracker_id]; if (t?.segment_started_at) { t.acc_seconds = extraTimerSeconds(t); t.segment_started_at = null; } });
+}
+export function resumeExtraTimer(tracker_id: string) {
+  setState(s => { const t = s.extraTimers[tracker_id]; if (t && !t.segment_started_at) t.segment_started_at = nowIso(); });
+}
+export function discardExtraTimer(tracker_id: string) { setState(s => { delete s.extraTimers[tracker_id]; }); }
+/** Stop and save as an entry: starts when the timer started, lasts the timed (un-paused) seconds. */
+export function stopExtraTimer(tracker_id: string, notes: string | null = null) {
+  const t = state.extraTimers[tracker_id]; if (!t) return null;
+  const secs = Math.max(1, Math.round(extraTimerSeconds(t)));
+  const id = upsertEntry('extras', { baby_id: t.baby_id, tracker_id, datetime: t.started_at, duration_seconds: secs, value_num: null, level: null, notes });
+  discardExtraTimer(tracker_id);
+  return { id, secs };
+}

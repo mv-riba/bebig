@@ -3,9 +3,10 @@ import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, R
 import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
-import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds } from '../lib/store';
+import { IPlay, IPause, IStop } from '../ui/icons';
 import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus } from '../lib/extras';
-import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey } from '../lib/time';
+import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey, formatClock, formatTime, formatDuration } from '../lib/time';
 import type { TrackerDef, TrackerIcon, TrackerKind, ExtraEntry, Level } from '../lib/types';
 import { defaultTime } from './LogFeed';
 
@@ -106,7 +107,8 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
 
 // ---------------- Log / edit an extra entry ----------------
 export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: string; entryId?: string; onKey?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast();
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000);
+  const timer = useStore(s => s.extraTimers?.[trackerId ?? ''] ?? null);
   const ex: ExtraEntry | undefined = entryId ? getState().extras[entryId] : undefined;
   const t: TrackerDef | undefined = getState().trackers[ex?.tracker_id ?? trackerId ?? ''];
   const tz = ctx?.baby.timezone ?? 'UTC';
@@ -130,10 +132,35 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
     toast(ex ? `${t.name} updated` : `${t.name} logged`, ex ? undefined : { label: 'Undo', run: () => deleteEntry('extras', id) });
     onDone();
   };
+  const timerAllowed = t.kind === 'duration' && !ex && !onKey;
+  const timerView = timerAllowed && (
+    <div className="card timer-card">
+      {!timer ? (
+        <>
+          <p className="muted small">Start a timer, or enter the minutes below.</p>
+          <button className="btn soft" onClick={() => { startExtraTimer(ctx.baby.baby_id, t.tracker_id); toast(`${t.name} timer started — it keeps running if you close the app`); }}><IPlay size={16} /> Start timer</button>
+        </>
+      ) : (
+        <>
+          <div className="timer-big" aria-live="off">{formatClock(extraTimerSeconds(timer, now))}</div>
+          <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'} · started {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>
+          <div className="btn-row">
+            {timer.segment_started_at
+              ? <button className="btn soft" onClick={() => pauseExtraTimer(t.tracker_id)}><IPause size={16} /> Pause</button>
+              : <button className="btn soft" onClick={() => resumeExtraTimer(t.tracker_id)}><IPlay size={16} /> Resume</button>}
+            <button className="btn primary" onClick={() => { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (r) toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => deleteEntry('extras', r.id) }); onDone(); }}><IStop size={16} /> Stop & save</button>
+          </div>
+          <button className="link small" onClick={async () => { if (await confirm({ title: `Discard the ${t.name} timer?`, text: 'Nothing will be saved.', ok: 'Discard', danger: true })) discardExtraTimer(t.tracker_id); }}>Discard timer</button>
+        </>
+      )}
+    </div>
+  );
   return (
     <Page title={ex ? `Edit ${t.name}` : t.name} onCancel={onDone} className="form-page"
       right={ex ? <button className="icon-btn danger" aria-label="Delete entry" onClick={() => { deleteEntry('extras', ex.extra_id); toast('Entry deleted', { label: 'Undo', run: () => restoreEntry('extras', ex.extra_id) }); onDone(); }}><ITrash /></button> : null}>
-      <Field label="Time"><input type="datetime-local" value={time} onChange={e => setTime(e.target.value)} /></Field>
+      {timerView}
+      {!timer && <>
+      <Field label={t.kind === 'duration' ? 'Started' : 'Time'}><input type="datetime-local" value={time} onChange={e => setTime(e.target.value)} /></Field>
       {t.kind === 'amount' && <Field label={`Amount (${t.unit})`}><input inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} /></Field>}
       {t.kind === 'duration' && <Field label="Duration"><Stepper label="duration" value={mins} onChange={setMins} step={5} max={600} unit="min" /></Field>}
       {t.kind === 'level' && <Field label="Level"><Segmented label="Level" value={level} onChange={setLevel} options={LEVELS.map(l => ({ value: l, label: cap(l) }))} /></Field>}
@@ -141,13 +168,16 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
       {t.preset === 'congestion' && <div className="alert notice soft"><IInfo size={18} /><span>This is a record only. If you’re worried about your baby’s breathing or health, contact your GP, consultatiebureau or call 112 in an emergency.</span></div>}
       {err && <div className="alert error" role="alert">{err}</div>}
       <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : `Save ${t.name}`}</button>
+      </>}
+      {timer && <Field label="Notes" hint="(optional, saved with the timer)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>}
     </Page>
   );
 }
 
 // ---------------- Home: "Log something else" sheet ----------------
 export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(30000);
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000);
+  const timers = useStore(s => s.extraTimers ?? {});
   if (!ctx) return null;
   const { baby, trackers, extras, data, prefs } = ctx; const tz = baby.timezone;
   const today = todayKey(tz);
@@ -168,7 +198,7 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <span className="tile-ic xt-wet"><IDrop size={22} /></span><span className="tile-n">Wet nappy</span>
             <span className="tile-s">{wetToday} today{lastWet ? ` · ${formatAgo(lastWet.datetime, now)}` : ''}</span></button>
         )}
-        {trackers.map(t => { const st = tileStatus(t, extras, tz, prefs.time_format, now); return (
+        {trackers.map(t => { const tm = timers[t.tracker_id]; const st = tm ? { text: `● ${formatClock(extraTimerSeconds(tm, now))}${tm.segment_started_at ? '' : ' paused'}`, done: false } : tileStatus(t, extras, tz, prefs.time_format, now); return (
           <button key={t.tracker_id} className={`tile ${st.done ? 'done' : ''}`} onClick={() => tap(t)} aria-label={`${t.name}: ${st.text}. ${oneTap(t) ? 'Tap to log now' : 'Tap to add'}`}>
             <span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
         <button className="tile tile-manage" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>
@@ -180,3 +210,18 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
 }
 
 export { Row, IChevron };
+
+/** Home: a slim bar for each running "How long" timer, so it isn't hidden in the sheet. */
+export function RunningExtraTimers() {
+  const ctx = useBaby(); const nav = useNav(); const now = useNow(1000);
+  const timers = useStore(s => Object.values(s.extraTimers ?? {}));
+  if (!ctx) return null;
+  const mine = timers.filter(t => t.baby_id === ctx.baby.baby_id).map(t => ({ t, def: ctx.allTrackers.find(d => d.tracker_id === t.tracker_id) })).filter(x => x.def);
+  if (!mine.length) return null;
+  return <>{mine.map(({ t, def }) => (
+    <button key={t.tracker_id} className="timer-bar" onClick={() => nav.push({ name: 'extra', trackerId: t.tracker_id })} aria-label={`${def!.name} timer ${t.segment_started_at ? 'running' : 'paused'}. Open to stop`}>
+      <span className="tile-ic sm"><TrackerIconSvg icon={def!.icon} size={18} /></span>
+      <span className="row-main"><span className="row-title">{def!.name}</span><span className="row-sub">{t.segment_started_at ? 'Running' : 'Paused'}</span></span>
+      <span className="timer-bar-clock">{formatClock(extraTimerSeconds(t, now))}</span><span className="timer-bar-stop">Stop</span>
+    </button>))}</>;
+}

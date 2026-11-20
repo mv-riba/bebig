@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { MoreSheet } from './Extras';
+import { MoreSheet, RunningExtraTimers } from './Extras';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
 import { useNow, Empty } from '../ui/ui';
@@ -73,6 +73,7 @@ export function Home() {
         <button className="btn primary" onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })}>{active ? 'Sleep timer' : <><IPlus size={18} /> Log Sleep</>}</button>
       </section>
       {hasExtras && <button className="more-pill" onClick={() => setMore(true)}><IPlus size={16} /> Log something else</button>}
+      <RunningExtraTimers />
       <MoreSheet open={more} onClose={() => setMore(false)} />
 
       {topInsight && (
