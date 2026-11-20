@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, type Table } from './store';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -180,9 +180,21 @@ async function pull() {
 let timer: any = null;
 let syncError: string | null = null;
 export const lastSyncError = () => syncError;
+/** After a pull: a baby that exists only on this device (and isn't waiting to upload) is merged into the server copy
+ *  with the same name and date of birth, or uploaded again if there is none. Nothing is lost either way. */
+function repairLocalOnlyBabies() {
+  const s = getState(); const me = currentUserId(); if (!me) return;
+  const pending = new Set([...s.outbox, ...(s.syncFailed || [])].filter(o => o.table === 'babies').map(o => o.row.baby_id));
+  const confirmed = Object.values(s.babies).filter(b => (b as any).server_updated_at);
+  for (const b of Object.values(s.babies)) {
+    if ((b as any).server_updated_at || pending.has(b.baby_id)) continue;
+    const target = confirmed.find(x => x.name.trim().toLowerCase() === b.name.trim().toLowerCase() && x.date_of_birth === b.date_of_birth);
+    if (target) mergeBabyInto(b.baby_id, target.baby_id); else requeueBaby(b.baby_id);
+  }
+}
 async function cycle() {
   try {
-    await push(); await pull(); setInitialPullDone(true); await push();
+    await push(); await pull(); repairLocalOnlyBabies(); setInitialPullDone(true); await push();
     const te = Object.entries(tableErrors);
     syncError = te.length ? `Some data couldn’t sync (${te.map(([t]) => t).join(', ')}): ${te[0][1]}` : null;
   }

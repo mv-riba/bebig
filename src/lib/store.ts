@@ -511,3 +511,58 @@ export function stopExtraTimer(tracker_id: string, notes: string | null = null) 
   discardExtraTimer(tracker_id);
   return { id, secs };
 }
+
+// ---------------- Repair: babies that never reached the server ----------------
+const ENTRY_TABLES = ['feeds', 'poos', 'sleeps', 'growth', 'extras'] as const;
+function orderOutbox(s: State) {
+  const rank: Record<string, number> = { babies: 0, access: 1, trackers: 2 };
+  s.outbox.sort((a, b) => (rank[a.table] ?? 3) - (rank[b.table] ?? 3));
+}
+/** Move everything recorded under `from` (a local-only duplicate) onto `to` (the copy on the server), then remove `from`. */
+export function mergeBabyInto(from: string, to: string) {
+  setState(s => {
+    const t = nowIso(); const src = s.babies[from], dst = s.babies[to]; if (!src || !dst) return;
+    // profile details the server copy lacks
+    let babyChanged = false;
+    for (const k of ['wet_tracking', 'birth_weight_grams', 'birth_length_mm', 'birth_head_circumference_mm', 'gestational_age_weeks', 'gestational_age_days', 'time_of_birth', 'photograph_url'] as const) {
+      if ((dst as any)[k] == null || (dst as any)[k] === false) { if ((src as any)[k] != null && (src as any)[k] !== false) { (dst as any)[k] = (src as any)[k]; babyChanged = true; } }
+    }
+    if (babyChanged) { dst.updated_at = t; queue(s, 'babies', dst); }
+    // trackers: same name + kind → the existing one; otherwise move it over
+    const existing = Object.values(s.trackers).filter(x => x.baby_id === to && !x.deleted_at);
+    const map = new Map<string, string>();
+    for (const tr of Object.values(s.trackers).filter(x => x.baby_id === from)) {
+      const m = existing.find(x => x.name.trim().toLowerCase() === tr.name.trim().toLowerCase() && x.kind === tr.kind);
+      if (m) { map.set(tr.tracker_id, m.tracker_id); if (tr.enabled && !m.enabled) { m.enabled = true; m.updated_at = t; queue(s, 'trackers', m); } delete s.trackers[tr.tracker_id]; }
+      else { tr.baby_id = to; tr.updated_at = t; if (!tr.deleted_at) queue(s, 'trackers', tr); }
+    }
+    const hasActiveSleep = Object.values(s.sleeps).some(x => x.baby_id === to && !x.deleted_at && x.status !== 'completed');
+    for (const tb of ENTRY_TABLES) for (const r of Object.values(s[tb] as Record<string, any>)) {
+      if (r.baby_id !== from) continue;
+      if (tb === 'sleeps' && r.status !== 'completed' && hasActiveSleep) { delete (s.sleeps as any)[r.sleep_id]; continue; } // only one running sleep timer per baby
+      r.baby_id = to; if (tb === 'extras' && map.has(r.tracker_id)) r.tracker_id = map.get(r.tracker_id); r.updated_at = t;
+      if (!r.deleted_at) queue(s, tb, r);
+    }
+    if (s.feedTimers[from] && !s.feedTimers[to]) s.feedTimers[to] = { ...s.feedTimers[from], baby_id: to };
+    delete s.feedTimers[from];
+    for (const [k, et] of Object.entries(s.extraTimers ?? {})) if (et.baby_id === from) { delete s.extraTimers[k]; const nk = map.get(k) ?? k; if (!s.extraTimers[nk]) s.extraTimers[nk] = { ...et, baby_id: to, tracker_id: nk }; }
+    for (const a of Object.values(s.access)) if (a.baby_id === from) delete s.access[a.access_id];
+    for (const [u, b] of Object.entries(s.selectedBaby)) if (b === from) s.selectedBaby[u] = to;
+    for (const k of Object.keys(s.chats)) if (k.endsWith(':' + from)) { const nk = k.slice(0, -from.length) + to; s.chats[nk] = [...(s.chats[nk] || []), ...s.chats[k]]; delete s.chats[k]; }
+    // drop queued ops for the removed copy
+    s.outbox = s.outbox.filter(o => !(o.table === 'babies' && o.row.baby_id === from) && !(o.table === 'access' && o.row.baby_id === from));
+    s.syncFailed = (s.syncFailed || []).filter(o => o.row.baby_id !== from);
+    delete s.babies[from];
+    s.audit.push({ at: t, user_id: session?.user_id ?? '', action: 'baby.merged_local_duplicate', detail: `${from} -> ${to}` });
+    orderOutbox(s);
+  });
+}
+/** Upload a baby (and everything recorded for it) that never reached the server. Idempotent: same ids. */
+export function requeueBaby(baby_id: string) {
+  setState(s => {
+    const b = s.babies[baby_id]; if (!b) return;
+    queue(s, 'babies', b);
+    for (const tb of ['trackers', ...ENTRY_TABLES] as const) for (const r of Object.values(s[tb] as Record<string, any>)) if (r.baby_id === baby_id) queue(s, tb, r);
+    orderOutbox(s);
+  });
+}

@@ -184,3 +184,24 @@ test('signing in moves data from an older on-device account (same email) to the 
   assert.deepEqual(s.outbox.map(o => o.table), ['babies', 'feeds']);
   assert.equal(store.selectedBaby(s)?.baby_id, 'B');
 });
+
+test('a local-only duplicate baby is merged into the server copy without losing entries', async () => {
+  const store = await import('../src/lib/store.ts');
+  store.setState(s => {
+    s.session = { user_id: 'R' } as any;
+    s.babies.L = { baby_id: 'L', name: 'Bogdan', date_of_birth: '2026-11-01', created_by: 'R', wet_tracking: true } as any;
+    s.babies.S = { baby_id: 'S', name: 'Bogdan', date_of_birth: '2026-11-01', created_by: 'R', server_updated_at: 'x' } as any;
+    s.access.AL = { access_id: 'AL', baby_id: 'L', user_id: 'R', role: 'owner', invitation_status: 'accepted' } as any;
+    s.trackers.TL = { tracker_id: 'TL', baby_id: 'L', name: 'Walk', kind: 'duration', enabled: true } as any;
+    s.trackers.TS = { tracker_id: 'TS', baby_id: 'S', name: 'walk', kind: 'duration', enabled: true } as any;
+    s.feeds.FL = { feed_id: 'FL', baby_id: 'L', created_by: 'R', start_datetime: '2026-11-20T10:00:00Z', feeding_type: 'breast', observations: [] } as any;
+    s.extras.EL = { extra_id: 'EL', baby_id: 'L', tracker_id: 'TL', datetime: '2026-11-20T11:00:00Z', duration_seconds: 600 } as any;
+    s.selectedBaby.R = 'L'; s.outbox = [];
+  });
+  store.mergeBabyInto('L', 'S');
+  const s = store.getState();
+  assert.equal(s.babies.L, undefined); assert.equal(s.access.AL, undefined);
+  assert.equal(s.feeds.FL.baby_id, 'S'); assert.equal(s.extras.EL.baby_id, 'S'); assert.equal(s.extras.EL.tracker_id, 'TS');
+  assert.equal(s.trackers.TL, undefined); assert.equal(s.babies.S.wet_tracking, true); assert.equal(s.selectedBaby.R, 'S');
+  assert.deepEqual(s.outbox.map(o => o.table), ['babies', 'feeds', 'extras']);
+});
