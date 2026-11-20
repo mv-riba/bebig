@@ -72,7 +72,7 @@ export function Home() {
         <button className="btn primary" onClick={() => nav.push({ name: 'poo' })}><IPlus size={18} /> {nappy ? 'Log Nappy' : 'Log Poo'}</button>
         <button className="btn primary" onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })}>{active ? 'Sleep timer' : <><IPlus size={18} /> Log Sleep</>}</button>
       </section>
-      {<button className="more-pill" onClick={() => setMore(true)}><IPlus size={16} /> Log something else</button>}
+      {hasExtras && <button className="more-pill" onClick={() => setMore(true)}><IPlus size={16} /> Log something else</button>}
       <MoreSheet open={more} onClose={() => setMore(false)} />
 
       {topInsight && (

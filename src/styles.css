@@ -307,6 +307,3 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .cal-day.has-growth .cal-num { box-shadow: 0 0 0 2px var(--accent); }
 .cal-day.sel.has-growth .cal-num { box-shadow: 0 0 0 2px #fff; }
 .ring-key { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--accent); display: inline-block; }
-
-.extras-empty { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px 8px; }
-.extras-empty p { margin: 0; }

@@ -162,14 +162,7 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
   };
   return (
     <Sheet open={open} onClose={onClose} title="Log something else">
-      {!baby.wet_tracking && trackers.length === 0 && (
-        <div className="extras-empty">
-          <p><strong>Track more than feeds, poos and sleep</strong></p>
-          <p className="muted small">Wet nappies, baths, congestion, or your own — like Vitamin D or saline drops. Only what you switch on appears here.</p>
-          <button className="btn primary block" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>Choose what to track</button>
-        </div>
-      )}
-      {(baby.wet_tracking || trackers.length > 0) && <div className="tiles">
+      <div className="tiles">
         {baby.wet_tracking && (
           <button className="tile" onClick={() => { const id = logWetNow(baby.baby_id); toast('Wet nappy logged', { label: 'Undo', run: () => deleteEntry('poos', id) }); onClose(); }}>
             <span className="tile-ic xt-wet"><IDrop size={22} /></span><span className="tile-n">Wet nappy</span>
@@ -180,8 +173,8 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
         <button className="tile tile-manage" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>
           <span className="tile-ic"><IPlus size={22} /></span><span className="tile-n">Manage</span><span className="tile-s">Add or hide</span></button>
-      </div>}
-      {(baby.wet_tracking || trackers.length > 0) && <p className="muted small center">One tap logs it now. Tap the entry in today’s activity to change the time or add a note.</p>}
+      </div>
+      <p className="muted small center">One tap logs it now. Tap the entry in today’s activity to change the time or add a note.</p>
     </Sheet>
   );
 }
