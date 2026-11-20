@@ -454,3 +454,10 @@ export function retryFailedSync() {
 let initialPullDone = false;
 export function setInitialPullDone(v: boolean) { if (initialPullDone !== v) { initialPullDone = v; setState(() => {}, false); } }
 export const isInitialPullDone = () => initialPullDone;
+
+/** Session could not be renewed: show sign-in again but KEEP local data and unsynced changes. */
+export function requireReauth(message: string) {
+  try { sessionStorage.setItem('bebig:authmsg', message); } catch { /* */ }
+  setSession(null);
+}
+export const unsyncedCount = (s: State = state) => s.outbox.length + (s.syncFailed?.length ?? 0);

@@ -6,7 +6,7 @@ import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, 
 import { BabyAvatar } from './Home';
 import {
   useStore, updateBaby, inviteCaregiver, revokeAccess, setRole, updatePrefs, exportBaby, deleteBabyData, signOut, updateAccount,
-  deleteAccount, currentUserId, accessibleBabies, selectBaby,
+  deleteAccount, currentUserId, accessibleBabies, selectBaby, unsyncedCount,
 } from '../lib/store';
 import { formatDateKey, describeAge, daysBetween, todayKey, listTimezones } from '../lib/time';
 import { syncMode, syncNow, syncStatus } from '../lib/sync';
@@ -271,7 +271,7 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
     <Page title="Account" onBack={onBack}>
       <Field label="Your name"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() && name !== me.display_name) { updateAccount({ display_name: name.trim() }); toast('Name updated'); } }} /></Field>
       <Field label="Email"><input value={me.email} disabled /></Field>
-      <button className="btn soft block" onClick={() => signOut()}>Sign out</button>
+      <button className="btn soft block" onClick={async () => { const n = unsyncedCount(); if (!n || await confirm({ title: 'Sign out?', text: `${n} change${n > 1 ? 's haven’t' : ' hasn’t'} synced yet and would be lost. Try Settings → Sync now first.`, ok: 'Sign out anyway', danger: true })) signOut(); }}>Sign out</button>
       <button className="btn danger block" onClick={async () => { if (await confirm({ title: 'Delete your account?', text: 'Baby profiles you own will also be deleted for everyone.', ok: 'Delete account', danger: true, typeWord: 'DELETE' })) await deleteAccount(); }}>Delete account</button>
     </Page>
   );

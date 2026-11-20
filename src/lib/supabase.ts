@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, type Table } from './store';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -23,10 +23,42 @@ async function gotrue(path: string, body: any) {
 }
 function toSession(j: any): AuthSession { return { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in ?? 3600) * 1000, user: j.user }; }
 
+// Refresh tokens are single-use (Supabase rotates them). Refreshing must therefore happen exactly once:
+// one in-flight refresh per page, a cross-tab lock (installed app + browser tab share storage), and a re-read of
+// storage in case another tab already refreshed. A truly dead session asks the user to sign in again without
+// discarding anything that hasn't synced yet.
+const readStored = (): AuthSession | null => { try { return JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); } catch { return null; } };
+const fresher = (s: AuthSession | null) => !!s && !!auth && s.refresh_token !== auth.refresh_token && s.expires_at > Date.now() + 60000;
+if (typeof window !== 'undefined') window.addEventListener('storage', e => { if (e.key === AUTH_KEY) auth = readStored(); });
+let refreshing: Promise<void> | null = null;
+async function refresh() {
+  const run = async () => {
+    const stored = readStored();
+    if (fresher(stored)) { auth = stored; return; }
+    if (auth && auth.expires_at > Date.now() + 60000) return; // refreshed while we waited for the lock
+    try {
+      saveAuth(toSession(await gotrue('token?grant_type=refresh_token', { refresh_token: auth!.refresh_token })));
+    } catch (e: any) {
+      const again = readStored();
+      if (fresher(again)) { auth = again; return; }
+      if (/already used|invalid refresh token|refresh token not found|session.*(expired|not found)/i.test(e.message || '')) {
+        saveAuth(null);
+        requireReauth('Please sign in again — your session expired. Nothing you logged on this device is lost; it will sync after you sign in.');
+      }
+      throw e;
+    }
+  };
+  const locks = (navigator as any).locks;
+  return locks?.request ? locks.request('bebig-auth-refresh', run) : run();
+}
 async function token(): Promise<string> {
   if (!auth) throw new Error('Not signed in');
-  if (Date.now() > auth.expires_at - 60000) saveAuth(toSession(await gotrue('token?grant_type=refresh_token', { refresh_token: auth.refresh_token })));
-  return auth!.access_token;
+  if (Date.now() > auth.expires_at - 60000) {
+    refreshing ??= refresh().finally(() => { refreshing = null; });
+    await refreshing;
+  }
+  if (!auth) throw new Error('Not signed in');
+  return auth.access_token;
 }
 
 async function rest(method: string, path: string, body?: any, prefer?: string) {
@@ -34,6 +66,7 @@ async function rest(method: string, path: string, body?: any, prefer?: string) {
     method, headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json', ...(prefer ? { Prefer: prefer } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (r.status === 401 && auth) auth = { ...auth, expires_at: 0 }; // force a refresh on the next call
   if (!r.ok) { const j = await r.json().catch(() => ({})); const e: any = new Error(j.message || `HTTP ${r.status}`); e.status = r.status; e.code = j.code; throw e; }
   return r.status === 204 ? null : r.json().catch(() => null);
 }
