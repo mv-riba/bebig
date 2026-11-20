@@ -30,7 +30,8 @@ export function Calendar() {
   }, [ctx, tz]);
 
   if (!ctx) return null;
-  const { data, prefs, growth, baby } = ctx; const fmt = prefs.time_format;
+  const { data, prefs, growth, baby } = ctx;
+  const growthCount = growth.length; const fmt = prefs.time_format;
   const first = `${view.y}-${pad(view.m)}-01`;
   const lead = weekdayIndex(first); const n = daysInMonth(view.y, view.m);
   const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: n }, (_, i) => `${view.y}-${pad(view.m)}-${pad(i + 1)}`)];
@@ -44,7 +45,7 @@ export function Calendar() {
 
   return (
     <div className="screen calendar">
-      <header className="screen-head"><h1>Calendar</h1><button className="icon-btn" aria-label="Go to today" onClick={() => { setSel(today); const { y, m } = parseKey(today); setView({ y, m }); }}><ICalendar /></button></header>
+      <header className="screen-head"><span /><h1>Calendar</h1><button className="pill-btn" onClick={() => nav.push({ name: 'growth' })} aria-label={`Growth charts${growthCount ? `, ${growthCount} measurements` : ''}`}><IChart size={18} /> Growth</button></header>
       <div className="card cal">
         <div className="cal-nav">
           <button className="icon-btn" aria-label="Previous month" onClick={() => move(-1)}><IBack /></button>
@@ -61,6 +62,7 @@ export function Calendar() {
             </button>
           ) : <span key={'e' + i} />)}
         </div>
+        <div className="cal-key" aria-hidden="true"><span><i className="dot dot-feed" />Feed</span><span><i className="dot dot-poo" />Poo</span><span><i className="dot dot-sleep" />Sleep</span><span><i className="dot dot-growth" />Growth</span></div>
         {(view.y !== parseKey(today).y || view.m !== parseKey(today).m || sel !== today) && <button className="link small center-block" onClick={() => { setSel(today); const { y, m } = parseKey(today); setView({ y, m }); }}>Return to today</button>}
       </div>
 
@@ -76,6 +78,14 @@ export function Calendar() {
           {(st.formulaMl > 0 || st.expressedMl > 0 || st.breastSeconds > 0) && (
             <p className="muted small">{[st.breastCount && `Breastfeeding ${formatDuration(st.breastSeconds)} (${st.breastCount})`, st.formulaMl && `Formula ${st.formulaMl} ml`, st.expressedMl && `Expressed ${st.expressedMl} ml`].filter(Boolean).join(' · ')}{st.avgFeedIntervalMin ? ` · avg ${formatDuration(st.avgFeedIntervalMin * 60)} between feeds` : ''}</p>
           )}
+          {meas.length > 0 && (
+            <div className="card meas-card">
+              {meas.map(m => (
+                <Row key={m.measurement_id} icon={<IScale />} onClick={() => nav.push({ name: 'measure', id: m.measurement_id })}
+                  title={m.measurement_id === 'birth' ? 'Birth measurements' : 'Growth measurement'} sub={[toDisplay('weight', m) != null && `${toDisplay('weight', m)!.toFixed(2)} kg`, toDisplay('length', m) != null && `${toDisplay('length', m)!.toFixed(1)} cm long`, toDisplay('head', m) != null && `head ${toDisplay('head', m)!.toFixed(1)} cm`].filter(Boolean).join(' · ')} right={<IChevron />} />
+              ))}
+            </div>
+          )}
           {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} /> : <Empty title="No activity recorded" text={beforeBirth ? undefined : 'Missed something? You can add it now.'} />}
           {!beforeBirth && (
             <div className="add-row" aria-label="Add entry for this day">
@@ -85,17 +95,8 @@ export function Calendar() {
               <button className="chip" onClick={() => nav.push({ name: 'measure', onKey: sel })}><IPlus size={14} /> Growth</button>
             </div>
           )}
-          {meas.length > 0 && (
-            <div className="card">
-              {meas.map(m => (
-                <Row key={m.measurement_id} icon={<IScale />} onClick={() => nav.push({ name: 'measure', id: m.measurement_id })}
-                  title="Growth measurement" sub={[toDisplay('weight', m) != null && `${toDisplay('weight', m)!.toFixed(2)} kg`, toDisplay('length', m) != null && `${toDisplay('length', m)!.toFixed(1)} cm long`, toDisplay('head', m) != null && `head ${toDisplay('head', m)!.toFixed(1)} cm`].filter(Boolean).join(' · ')} right={<IChevron />} />
-              ))}
-            </div>
-          )}
         </>
       )}
-      <button className="card row tap growth-link" onClick={() => nav.push({ name: 'growth' })}><span className="row-ic"><IChart /></span><span className="row-main"><span className="row-title">Growth charts</span><span className="row-sub">{growth.length ? `${growth.length} measurement${growth.length > 1 ? 's' : ''} recorded` : 'No measurements yet'}</span></span><IChevron /></button>
     </div>
   );
 }

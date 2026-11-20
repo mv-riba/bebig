@@ -27,7 +27,7 @@ p { margin: .3em 0; }
 .main { padding: calc(16px + var(--safe-t)) 18px calc(96px + var(--safe-b)); }
 .overlay { min-height: 100dvh; }
 .screen { position: relative; display: flex; flex-direction: column; gap: 14px; }
-.screen-head { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; text-align: center; min-height: 44px; }
+.screen-head { display: grid; grid-template-columns: 96px 1fr 96px; align-items: center; text-align: center; min-height: 44px; }
 .screen-head > :last-child { justify-self: end; }
 .sec-head { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
 .sec-title { margin: 8px 2px 0; display: flex; gap: 6px; align-items: center; }
@@ -196,7 +196,9 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .ds strong { font-size: 1.25rem; color: var(--ink); } .ds-big { font-size: 1.05rem; font-weight: 800; color: var(--ink); padding: 8px 0 3px; }
 .ds-feed svg { color: var(--sage-d); } .ds-poo svg { color: var(--peach-d); } .ds-sleep svg { color: var(--lav-d); } .ds-total { background: var(--lav-l); }
 .add-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.growth-link { text-align: left; display: flex; }
+.pill-btn { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 0 12px; border-radius: 999px; background: var(--accent-l); color: var(--accent-d); font-weight: 700; font-size: .85rem; white-space: nowrap; }
+.cal-key { display: flex; justify-content: center; gap: 14px; margin-top: 8px; font-size: .74rem; color: var(--muted); } .cal-key span { display: inline-flex; align-items: center; gap: 5px; }
+.meas-card { background: var(--accent-xl); }
 
 /* ---------- Growth ---------- */
 .stat-card { display: flex; justify-content: space-between; gap: 12px; }
