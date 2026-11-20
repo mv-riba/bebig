@@ -93,7 +93,7 @@ async function pull() {
   const profiles = await rest('GET', 'profiles?select=user_id,email,display_name,created_at,updated_at') as User[];
   const results: Partial<Record<Table, any[]>> = {};
   for (const t of Object.keys(REMOTE) as Table[]) {
-    const since = cursors[t] ? `&server_updated_at=gt.${encodeURIComponent(cursors[t])}` : '';
+    const since = cursors[t] ? `&server_updated_at=gt.${encodeURIComponent(new Date(new Date(cursors[t]).getTime() - 5 * 60000).toISOString())}` : '';
     const rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[];
     results[t] = rows;
     if (rows.length) cursors[t] = rows[rows.length - 1].server_updated_at;
@@ -133,7 +133,14 @@ async function pull() {
 }
 
 let timer: any = null;
-async function cycle() { try { await push(); await pull(); setInitialPullDone(true); await push(); } catch (e) { console.warn('sync', e); if (!navigator.onLine) setInitialPullDone(true); } }
+let syncError: string | null = null;
+export const lastSyncError = () => syncError;
+async function cycle() {
+  try { await push(); await pull(); setInitialPullDone(true); await push(); syncError = null; }
+  catch (e: any) { console.warn('sync', e); syncError = navigator.onLine ? (e?.message || 'Sync failed') : 'Offline'; if (!navigator.onLine) setInitialPullDone(true); }
+  setState(() => {}, false);
+}
+export const syncNow = () => cycle();
 export function startRemoteSync() {
   setRemoteAuth({
     async register(email, password, display_name) {

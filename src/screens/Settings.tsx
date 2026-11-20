@@ -9,7 +9,8 @@ import {
   deleteAccount, currentUserId, accessibleBabies, selectBaby,
 } from '../lib/store';
 import { formatDateKey, describeAge, daysBetween, todayKey, listTimezones } from '../lib/time';
-import { syncMode } from '../lib/sync';
+import { syncMode, syncNow, syncStatus } from '../lib/sync';
+import { formatAgo } from '../lib/time';
 import { config } from '../lib/config';
 import type { FeedingPreference } from '../lib/types';
 
@@ -34,6 +35,9 @@ export function Settings() {
         <IChevron />
       </button>
       {babies.length > 1 && (
+        <p className="muted small">You have access to {babies.length} baby profiles. Entries are saved to the selected one — make sure everyone uses the same profile.</p>
+      )}
+      {babies.length > 1 && (
         <div className="chips">{babies.map(b => <Chip key={b.baby_id} on={b.baby_id === baby.baby_id} onClick={() => selectBaby(b.baby_id)}>{b.name}</Chip>)}</div>
       )}
       <div className="sec-head"><h2>Birth details</h2><button className="link" onClick={go({ name: 'profile' })}><IEdit size={16} /> {hasBirth ? 'Edit' : 'Add'}</button></div>
@@ -53,6 +57,7 @@ export function Settings() {
         <Row icon={<IShield />} title="Privacy" onClick={go({ name: 'privacy' })} right={<IChevron />} />
         <Row icon={<IEdit />} title="Account" sub={me?.email} onClick={go({ name: 'account' })} right={<IChevron />} />
       </div>
+      {syncMode() === 'remote' && <SyncRow />}
       <p className="muted tiny center">Bebig {config.version} · {syncMode() === 'local' ? 'Local mode: data is stored on this device only' : 'Cloud sync on'}</p>
     </div>
   );
@@ -269,5 +274,20 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
       <button className="btn soft block" onClick={() => signOut()}>Sign out</button>
       <button className="btn danger block" onClick={async () => { if (await confirm({ title: 'Delete your account?', text: 'Baby profiles you own will also be deleted for everyone.', ok: 'Delete account', danger: true, typeWord: 'DELETE' })) await deleteAccount(); }}>Delete account</button>
     </Page>
+  );
+}
+
+function SyncRow() {
+  const last = useStore(s => s.lastSyncedAt);
+  const pending = useStore(s => s.outbox.length + (s.syncFailed?.length ?? 0));
+  const me = useStore(s => s.users[currentUserId() ?? '']);
+  const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  const run = async () => { setBusy(true); await syncNow(); const e = await syncStatus(); setErr(e); setBusy(false); toast(e ? 'Sync problem: ' + e : 'Synced'); };
+  return (
+    <div className="card list">
+      <Row title="Sync" sub={<>{last ? `Last synced ${formatAgo(last)}` : 'Not synced yet'}{pending ? ` · ${pending} change${pending > 1 ? 's' : ''} waiting` : ''}<br />Signed in as {me?.email}{err ? <><br /><span className="field-error">{err}</span></> : null}</>}
+        right={<button className="btn soft small" disabled={busy} onClick={run}>{busy ? 'Syncing…' : 'Sync now'}</button>} />
+    </div>
   );
 }
