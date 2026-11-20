@@ -123,6 +123,7 @@ async function push() {
 // ---------- pull ----------
 const cursorKey = 'bebig:cursors';
 const cursors: Record<string, string> = (() => { try { return JSON.parse(localStorage.getItem(cursorKey) || '{}'); } catch { return {}; } })();
+const tableErrors: Partial<Record<Table, string>> = {};
 async function pull() {
   if (!auth || !navigator.onLine) return;
   const me = auth.user.id;
@@ -130,7 +131,14 @@ async function pull() {
   const results: Partial<Record<Table, any[]>> = {};
   for (const t of Object.keys(REMOTE) as Table[]) {
     const since = cursors[t] ? `&server_updated_at=gt.${encodeURIComponent(new Date(new Date(cursors[t]).getTime() - 5 * 60000).toISOString())}` : '';
-    const rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[];
+    let rows: any[];
+    try { rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[]; }
+    catch (e: any) {
+      // one table failing (e.g. a database update not applied yet) must not stop everything else syncing
+      if (e.status === 401 || !navigator.onLine) throw e;
+      tableErrors[t] = e.message; continue;
+    }
+    delete tableErrors[t];
     results[t] = rows;
     if (rows.length) cursors[t] = rows[rows.length - 1].server_updated_at;
   }
@@ -173,7 +181,11 @@ let timer: any = null;
 let syncError: string | null = null;
 export const lastSyncError = () => syncError;
 async function cycle() {
-  try { await push(); await pull(); setInitialPullDone(true); await push(); syncError = null; }
+  try {
+    await push(); await pull(); setInitialPullDone(true); await push();
+    const te = Object.entries(tableErrors);
+    syncError = te.length ? `Some data couldn’t sync (${te.map(([t]) => t).join(', ')}): ${te[0][1]}` : null;
+  }
   catch (e: any) { console.warn('sync', e); syncError = navigator.onLine ? (e?.message || 'Sync failed') : 'Offline'; if (!navigator.onLine) setInitialPullDone(true); }
   setState(() => {}, false);
 }

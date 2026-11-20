@@ -14,7 +14,7 @@ const cfg = fs.existsSync('bebig.config.json') ? JSON.parse(fs.readFileSync('beb
 const supabaseUrl = process.env.BEBIG_SUPABASE_URL || cfg.supabaseUrl || '';
 const supabaseAnonKey = process.env.BEBIG_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || '';
 const remote = !serve && !process.env.BEBIG_LOCAL && supabaseUrl && supabaseAnonKey;
-const version = pkg.version + (serve ? '-dev' : '');
+const version = pkg.version + (serve ? '-dev' : '') + (process.env.GITHUB_SHA ? '+' + process.env.GITHUB_SHA.slice(0, 7) : '');
 const out = 'dist';
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
