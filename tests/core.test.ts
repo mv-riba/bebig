@@ -167,3 +167,20 @@ test('assistant answers about custom trackers from records', () => {
   const none = answer('When was the last bath?', d, [], '24h', now, { trackers: [t], extras: [e] })[0];
   assert.notEqual(none.kind, 'fact');
 });
+
+test('signing in moves data from an older on-device account (same email) to the real account and queues it', async () => {
+  const store = await import('../src/lib/store.ts');
+  store.setState(s => {
+    s.users.X = { user_id: 'X', email: 'p@x.com', display_name: 'P', created_at: '', updated_at: '' } as any;
+    s.babies.B = { baby_id: 'B', name: 'Noor', created_by: 'X' } as any;
+    s.access.A1 = { access_id: 'A1', baby_id: 'B', user_id: 'X', invited_email: 'p@x.com', role: 'owner', invitation_status: 'accepted', invited_by: 'X' } as any;
+    s.feeds.F = { feed_id: 'F', baby_id: 'B', created_by: 'X', updated_by: 'X', start_datetime: '2026-11-01T10:00:00Z', feeding_type: 'breast', observations: [] } as any;
+    s.selectedBaby.X = 'B'; s.outbox = [];
+  });
+  store.adoptRemoteUser({ user_id: 'R', email: 'P@x.com', display_name: 'P' });
+  const s = store.getState();
+  assert.equal(s.users.X, undefined); assert.equal(s.babies.B.created_by, 'R'); assert.equal(s.access.A1.user_id, 'R');
+  assert.equal(s.feeds.F.created_by, 'R'); assert.equal(s.selectedBaby.R, 'B');
+  assert.deepEqual(s.outbox.map(o => o.table), ['babies', 'feeds']);
+  assert.equal(store.selectedBaby(s)?.baby_id, 'B');
+});

@@ -141,6 +141,27 @@ export const isRemote = () => !!remote;
 export function adoptRemoteUser(u: { user_id: string; email: string; display_name: string }) {
   const t = nowIso();
   setState(s => {
+    // Data recorded on this device under an older on-device account with the same email (e.g. before cloud sync
+    // was switched on) is moved to the real account, so it can sync instead of being stranded.
+    const email = u.email.toLowerCase();
+    for (const old of Object.values(s.users)) {
+      if (old.user_id === u.user_id || old.email !== email) continue;
+      const from = old.user_id, to = u.user_id;
+      const fix = (r: any) => { for (const k of ['created_by', 'updated_by', 'user_id', 'invited_by']) if (r && r[k] === from) r[k] = to; };
+      for (const tb of ['babies', 'access', 'feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const) Object.values(s[tb] as Record<string, any>).forEach(fix);
+      Object.values(s.feedTimers).forEach(fix);
+      s.outbox.forEach(o => fix(o.row)); (s.syncFailed || []).forEach(o => fix(o.row));
+      // queue everything this account owns locally that the server has never confirmed
+      for (const tb of ['babies', 'feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const)
+        for (const r of Object.values(s[tb] as Record<string, any>)) if (r.created_by === to && !r.server_updated_at) s.outbox.push({ op_id: uuid(), table: tb, row: structuredClone(r), queued_at: t });
+      if (s.prefs[from] && !s.prefs[to]) s.prefs[to] = s.prefs[from];
+      if (s.selectedBaby[from] && !s.selectedBaby[to]) s.selectedBaby[to] = s.selectedBaby[from];
+      delete s.users[from]; delete s.prefs[from]; delete s.selectedBaby[from]; delete s.credentials[email];
+      Object.keys(s.chats).forEach(k => { if (k.startsWith(from + ':')) { s.chats[to + k.slice(from.length)] = s.chats[k]; delete s.chats[k]; } });
+      s.audit.push({ at: t, user_id: to, action: 'account.local_data_moved', detail: from });
+    }
+    // babies must go before their entries
+    s.outbox.sort((a, b) => (a.table === 'babies' ? 0 : 1) - (b.table === 'babies' ? 0 : 1));
     s.users[u.user_id] = { created_at: t, ...s.users[u.user_id], user_id: u.user_id, email: u.email.toLowerCase(), display_name: s.users[u.user_id]?.display_name || u.display_name, updated_at: t };
     if (!s.prefs[u.user_id]) s.prefs[u.user_id] = defaultPrefs();
   });

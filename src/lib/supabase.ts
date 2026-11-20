@@ -241,6 +241,11 @@ export function startRemoteSync() {
   // changes the server rejected (e.g. before a database update was applied) are retried every 5 minutes
   setInterval(() => { if (auth && navigator.onLine && getState().syncFailed?.length) { retryFailedSync(); kick(); } }, 5 * 60000);
   if (auth) { if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
+  else if (currentUserId()) {
+    // looks signed in on this device, but there is no server session (e.g. signed up before cloud sync existed):
+    // ask to sign in again so the data can sync — nothing local is deleted
+    requireReauth('Please sign in again to switch on syncing with your other devices. Nothing you logged on this device is lost.');
+  }
   return () => clearInterval(timer);
 }
 
@@ -251,4 +256,40 @@ export async function phraseAnswer(baby_id: string, question: string, verified_a
     if (!r.ok) return verified_answer;
     return (await r.json()).content || verified_answer;
   } catch { return verified_answer; }
+}
+
+/** Side-by-side counts of what this device holds and what the server holds, for troubleshooting sync. */
+export async function diagnostics(): Promise<string> {
+  const s = getState(); const me = currentUserId(); const lines: string[] = [];
+  const short = (x?: string | null) => (x ? x.slice(0, 8) : '—');
+  lines.push(`Bebig ${(await import('./config')).config.version} · cloud sync`);
+  lines.push(`Device user: ${short(me)} ${s.users[me ?? '']?.email ?? ''} · server session: ${auth ? short(auth.user.id) + ' ' + auth.user.email : 'NONE'}`);
+  lines.push(`Online: ${navigator.onLine} · last synced: ${s.lastSyncedAt ?? 'never'} · waiting: ${s.outbox.length} · rejected: ${s.syncFailed?.length ?? 0}`);
+  for (const f of (s.syncFailed ?? []).slice(-3)) lines.push(`  rejected ${f.table}: ${f.error}`);
+  const te = Object.entries(tableErrors); for (const [t, e] of te) lines.push(`  table error ${t}: ${e}`);
+  if (syncError) lines.push(`Last error: ${syncError}`);
+  const mine = Object.values(s.access).filter(a => a.user_id === me && a.invitation_status === 'accepted').map(a => a.baby_id);
+  lines.push(`Babies on device: ${Object.values(s.babies).map(b => `${b.name} [${short(b.baby_id)}${(b as any).server_updated_at ? '' : ', not on server'}${mine.includes(b.baby_id) ? '' : ', no access'}${s.selectedBaby[me ?? ''] === b.baby_id ? ', selected' : ''}]`).join('; ') || 'none'}`);
+  if (auth) {
+    try {
+      const sb = await rest('GET', 'baby_profiles?select=baby_id,name') as any[];
+      lines.push(`Babies on server: ${sb.map(b => `${b.name} [${short(b.baby_id)}]`).join('; ') || 'none'}`);
+      const acc = await rest('GET', `baby_access?select=baby_id,role,invitation_status&user_id=eq.${auth.user.id}`) as any[];
+      lines.push(`Server access for this account: ${acc.map(a => `${short(a.baby_id)} ${a.role}/${a.invitation_status}`).join('; ') || 'none'}`);
+      for (const b of sb) {
+        const parts: string[] = [];
+        for (const t of ['feeds', 'poos', 'sleeps', 'growth', 'extras'] as Table[]) {
+          const local = Object.values(s[t] as Record<string, any>).filter(r => r.baby_id === b.baby_id && !r.deleted_at).length;
+          let remote = '?';
+          try {
+            const r = await fetch(`${URL_}/rest/v1/${REMOTE[t].table}?baby_id=eq.${b.baby_id}&deleted_at=is.null&select=${REMOTE[t].id}`, { headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, Prefer: 'count=exact', Range: '0-0' } });
+            remote = (r.headers.get('content-range') || '').split('/')[1] || String(r.status);
+          } catch (e: any) { remote = 'err'; }
+          parts.push(`${t} ${local}/${remote}`);
+        }
+        lines.push(`  ${b.name}: device/server → ${parts.join(', ')}`);
+      }
+    } catch (e: any) { lines.push(`Server check failed: ${e.message}`); }
+  }
+  return lines.join('\n');
 }

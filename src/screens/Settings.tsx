@@ -9,7 +9,7 @@ import {
   deleteAccount, currentUserId, accessibleBabies, selectBaby, unsyncedCount,
 } from '../lib/store';
 import { formatDateKey, describeAge, daysBetween, todayKey, listTimezones } from '../lib/time';
-import { syncMode, syncNow, syncStatus } from '../lib/sync';
+import { syncMode, syncNow, syncStatus, syncDiagnostics } from '../lib/sync';
 import { formatAgo } from '../lib/time';
 import { config } from '../lib/config';
 import type { FeedingPreference } from '../lib/types';
@@ -287,10 +287,15 @@ function SyncRow() {
   const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const toast = useToast();
   const run = async () => { setBusy(true); await syncNow(); const e = await syncStatus(); setErr(e); setBusy(false); toast(e ? 'Sync problem: ' + e : 'Synced'); };
+  const [diag, setDiag] = useState<string | null>(null);
+  const showDiag = async () => { setBusy(true); try { await syncNow(); } catch { /* */ } setDiag(await syncDiagnostics()); setBusy(false); };
+  const copy = async () => { try { await navigator.clipboard.writeText(diag || ''); toast('Copied — paste it to Claude'); } catch { toast('Couldn’t copy — take a screenshot instead'); } };
   return (
     <div className="card list">
       <Row title="Sync" sub={<>{last ? `Last synced ${formatAgo(last)}` : 'Not synced yet'}{pending ? ` · ${pending} change${pending > 1 ? 's' : ''} waiting` : ''}<br />Signed in as {me?.email}{err ? <><br /><span className="field-error">{err}</span></> : null}</>}
         right={<button className="btn soft small" disabled={busy} onClick={run}>{busy ? 'Syncing…' : 'Sync now'}</button>} />
+      <button className="row tap" onClick={showDiag} disabled={busy}><span className="row-main"><span className="row-title">Sync diagnostics</span><span className="row-sub">Compare this device with the server</span></span></button>
+      {diag && <div className="diag"><pre>{diag}</pre><button className="btn soft small" onClick={copy}>Copy</button></div>}
     </div>
   );
 }

@@ -22,3 +22,7 @@ export function startSync() {
 /** Force a sync now (remote mode) and report status for the Settings screen. */
 export async function syncNow() { if (syncMode() === 'remote') { const m = await import('./supabase'); await m.syncNow(); } }
 export async function syncStatus(): Promise<string | null> { if (syncMode() !== 'remote') return null; const m = await import('./supabase'); return m.lastSyncError(); }
+export async function syncDiagnostics(): Promise<string> {
+  if (syncMode() !== 'remote') return 'Local mode — no cloud sync configured in this build.';
+  const m = await import('./supabase'); return m.diagnostics();
+}
