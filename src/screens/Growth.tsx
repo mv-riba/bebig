@@ -49,7 +49,7 @@ export function MeasureForm({ id, onKey, onDone }: { id?: string; onKey?: string
       <Field label={`Weight (${wu})`} hint="(optional)"><input inputMode="decimal" placeholder={imperial ? 'e.g. 7.5' : 'e.g. 3.45'} value={w} onChange={e => setW(e.target.value)} /></Field>
       <Field label={`Length / height (${lu})`} hint="(optional)"><input inputMode="decimal" placeholder={imperial ? 'e.g. 20' : 'e.g. 51.5'} value={l} onChange={e => setL(e.target.value)} /></Field>
       <Field label={`Head circumference (${lu})`} hint="(optional)"><input inputMode="decimal" placeholder={imperial ? 'e.g. 13.8' : 'e.g. 35'} value={h} onChange={e => setH(e.target.value)} /></Field>
-      <Field label="Notes" hint="(optional)"><textarea rows={2} placeholder="e.g. measured at consultatiebureau" value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <Field label="Notes" hint="(optional)"><textarea rows={2} placeholder="e.g. measured at a check-up" value={notes} onChange={e => setNotes(e.target.value)} /></Field>
       {err && <div className="alert error" role="alert">{err}</div>}
       <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : 'Save Measurement'}</button>
     </Page>

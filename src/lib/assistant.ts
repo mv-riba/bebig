@@ -66,9 +66,9 @@ export function answer(question: string, d: Data, growth: GrowthMeasurement[], f
   if (!q) return [{ kind: 'info', content: 'Ask me about feeds, sleep, bowel movements or growth that have been recorded.' }];
 
   // ---- Safety first ----
-  if (SLEEP_TRAINING.test(s)) return [{ kind: 'safety', content: `I can’t recommend sleep training or any treatment. I can show you what ${name}’s recorded sleep looks like — try “Does ${name} have a consistent nap pattern?”. For guidance on sleep approaches, please speak with your health visitor, consultatiebureau or GP.` }];
-  if (PRESCRIBE.test(s)) return [{ kind: 'safety', content: `I can’t tell you how much or how often to feed, or advise delaying feeds. Always respond to ${name}’s hunger and tiredness cues. A midwife, health visitor, consultatiebureau or GP can advise on feeding. I can show what has been recorded — for example “How much formula today?”.` }];
-  if (MEDICAL.test(s)) return [{ kind: 'safety', content: `I’m a routine-tracking assistant, so I can’t assess ${name}’s health or say whether something is normal. If you’re concerned, please contact your GP, midwife, consultatiebureau or health visitor — or call emergency services (112 in the EU) if it feels urgent. I can share what has been recorded if that helps you talk to them.` }];
+  if (SLEEP_TRAINING.test(s)) return [{ kind: 'safety', content: `I can’t recommend sleep training or any treatment. I can show you what ${name}’s recorded sleep looks like — try “Does ${name} have a consistent nap pattern?”. For guidance on sleep approaches, please speak with your doctor or another healthcare professional who looks after your baby.` }];
+  if (PRESCRIBE.test(s)) return [{ kind: 'safety', content: `I can’t tell you how much or how often to feed, or advise delaying feeds. Always respond to ${name}’s hunger and tiredness cues. Your doctor, midwife or another healthcare professional can advise on feeding. I can show what has been recorded — for example “How much formula today?”.` }];
+  if (MEDICAL.test(s)) return [{ kind: 'safety', content: `I’m a routine-tracking assistant, so I can’t assess ${name}’s health or say whether something is normal. If you’re concerned, please contact your doctor or another healthcare professional — or call your local emergency number if it feels urgent. I can share what has been recorded if that helps you talk to them.` }];
 
   const feeds = sortedFeeds(d), poos = sortedPoos(d), sleeps = completedSleeps(d);
   const active = d.sleeps.find(x => x.status !== 'completed');

@@ -165,7 +165,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
       {t.kind === 'duration' && <Field label="Duration"><Stepper label="duration" value={mins} onChange={setMins} step={5} max={600} unit="min" /></Field>}
       {t.kind === 'level' && <Field label="Level"><Segmented label="Level" value={level} onChange={setLevel} options={LEVELS.map(l => ({ value: l, label: cap(l) }))} /></Field>}
       <Field label="Notes" hint="(optional)"><textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
-      {t.preset === 'congestion' && <div className="alert notice soft"><IInfo size={18} /><span>This is a record only. If you’re worried about your baby’s breathing or health, contact your GP, consultatiebureau or call 112 in an emergency.</span></div>}
+      {t.preset === 'congestion' && <div className="alert notice soft"><IInfo size={18} /><span>This is a record only. If you’re worried about your baby’s breathing or health, contact your doctor or another healthcare professional, or call your local emergency number if it feels urgent.</span></div>}
       {err && <div className="alert error" role="alert">{err}</div>}
       <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : `Save ${t.name}`}</button>
       </>}

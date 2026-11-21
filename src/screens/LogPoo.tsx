@@ -20,11 +20,11 @@ export const colourLabel = (c?: string | null) => COLOURS.find(x => x.value === 
 
 // NOTE: Notice copy is a draft and MUST be clinically reviewed before release (PRD 8.3).
 export function healthNotice(colour: PooColour | null | undefined, ageDays: number): string | null {
-  if (colour === 'pale') return 'White, pale or grey stools can sometimes be a sign of a problem that needs prompt checking. Please contact your GP, midwife or consultatiebureau promptly — even if your baby seems well.';
-  if (colour === 'red') return 'Red or visibly bloody stools should be checked. Please contact your GP or healthcare provider promptly.';
+  if (colour === 'pale') return 'White, pale or grey stools can sometimes be a sign of a problem that needs prompt checking. Please contact your doctor or another healthcare professional promptly — even if your baby seems well.';
+  if (colour === 'red') return 'Red or visibly bloody stools should be checked. Please contact your doctor or another healthcare professional promptly.';
   if (colour === 'black') return ageDays <= 4
-    ? 'Dark, sticky stools (meconium) are common in the first few days after birth. If black stools continue or you’re unsure, contact your midwife or GP.'
-    : 'Black, tarry stools after the first few days should be checked. Please contact your GP or healthcare provider promptly.';
+    ? 'Dark, sticky stools (meconium) are common in the first few days after birth. If black stools continue or you’re unsure, contact your doctor or another healthcare professional.'
+    : 'Black, tarry stools after the first few days should be checked. Please contact your doctor or another healthcare professional promptly.';
   return null;
 }
 
