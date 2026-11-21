@@ -315,3 +315,8 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 
 .diag { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
 .diag pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: .72rem; background: var(--cream-2); padding: 10px; border-radius: 12px; max-height: 320px; overflow: auto; }
+
+.row-stack + .row, .row + .row-stack { border-top: 1px solid var(--line); }
+.row-inline { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 0 12px; font-size: .9rem; color: var(--ink-2); }
+.row-inline select { width: auto; min-width: 96px; min-height: 40px; padding: 6px 12px; }
+.row-inline select:disabled { opacity: .5; }

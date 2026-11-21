@@ -208,9 +208,12 @@ export function PrefsPage({ onBack }: { onBack: () => void }) {
       <h2 className="sec-title"><IBell size={18} /> Reminders</h2>
       <p className="muted small">Off by default. Reminders appear while Bebig is open or installed on your home screen. They’re simple timers — never feeding or medical advice.</p>
       <div className="card list">
-        <label className="row"><span className="row-main"><span className="row-title">Feeding reminder</span><span className="row-sub">After the last feed</span></span>
-          <select aria-label="Feeding reminder interval" value={p.notifications.feeding_interval_min} onChange={e => updatePrefs({ notifications: { ...p.notifications, feeding_interval_min: Number(e.target.value) } })}>{[120, 150, 180, 210, 240].map(m => <option key={m} value={m}>{m / 60} h</option>)}</select>
-          <input type="checkbox" className="switch" checked={p.notifications.feeding} onChange={e => setN('feeding', e.target.checked)} /></label>
+        <div className="row-stack">
+          <label className="row"><span className="row-main"><span className="row-title">Feeding reminder</span><span className="row-sub">Reminds you when it’s been a while since the last logged feed</span></span>
+            <input type="checkbox" className="switch" checked={p.notifications.feeding} onChange={e => setN('feeding', e.target.checked)} /></label>
+          <label className="row-inline"><span>Remind me after</span>
+            <select aria-label="Feeding reminder interval" value={p.notifications.feeding_interval_min} disabled={!p.notifications.feeding} onChange={e => updatePrefs({ notifications: { ...p.notifications, feeding_interval_min: Number(e.target.value) } })}>{[120, 150, 180, 210, 240].map(m => <option key={m} value={m}>{m / 60} h</option>)}</select></label>
+        </div>
         <label className="row"><span className="row-main"><span className="row-title">Sleep timer reminder</span><span className="row-sub">If a sleep timer has run for 4+ hours</span></span><input type="checkbox" className="switch" checked={p.notifications.sleep} onChange={e => setN('sleep', e.target.checked)} /></label>
       </div>
     </Page>
