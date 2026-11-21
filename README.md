@@ -30,7 +30,7 @@ Times are stored in UTC; the baby’s IANA time zone controls display and daily 
 
 ## Going live (GitHub Pages + your domain + Supabase)
 
-1. **Supabase**: create a project (choose an EU region), then run `supabase/migrations/0001_init.sql` (SQL editor or `supabase db push`). In Auth → URL configuration, set the site URL to your domain.
+1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0005 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`). In Auth → URL configuration, set the site URL to your domain.
 2. **Config**: `bebig.config.json` holds the Supabase URL, the public anon key and the custom domain (env vars `BEBIG_SUPABASE_URL` / `BEBIG_SUPABASE_ANON_KEY` override). In GitHub *Settings → Pages* choose “GitHub Actions” and set the custom domain.
 3. **DNS**: for a subdomain add a `CNAME` record → `<github-user>.github.io`. For an apex domain add `A` records to GitHub Pages’ IPs. Then tick “Enforce HTTPS”.
 4. Optional AI phrasing: `supabase functions deploy assistant` and `supabase secrets set ANTHROPIC_API_KEY=…`.

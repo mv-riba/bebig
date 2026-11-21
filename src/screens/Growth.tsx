@@ -121,7 +121,7 @@ export function GrowthCharts({ onBack }: { onBack: () => void }) {
             <span className="muted small">{a.percentile != null ? `${formatPercentile(a.percentile)} percentile` : a.reason}</span></div>
           <div className="stat-side"><span className="muted small">Date</span><strong>{formatDateKey(sel.measurement_date, 'weekday')}</strong>
             <span className="muted small">Age {describeAge(a.ageDays).replace(' old', '')}{a.corrected ? ' (corrected)' : ''}</span>
-            {sel.created_by && <span className="muted tiny">Entered by {users[sel.created_by]?.display_name ?? '—'}</span>}</div>
+            <span className="muted tiny">Entered by {(sel.created_by && users[sel.created_by]?.display_name) || 'Former caregiver'}</span></div>
         </div>
       ) : null}
       {withV.length ? <Chart ind={ind} onPick={setPicked} picked={sel?.measurement_id ?? null} /> : <Empty icon={<IScale size={30} />} title={`No ${LABEL[ind].toLowerCase()} measurements yet`} text="Add measurements from your healthcare visits, or add birth details in Settings, to see them on the chart." action={<div className="btn-row"><button className="btn primary" onClick={() => nav.push({ name: 'measure' })}>Add measurement</button><button className="btn soft" onClick={() => nav.push({ name: 'profile' })}>Birth details</button></div>} />}

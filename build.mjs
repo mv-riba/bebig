@@ -39,7 +39,9 @@ const opts = {
 function writeHtml(meta) {
   const outputs = Object.keys(meta.outputs).map(p => path.basename(p));
   const js = outputs.find(f => f.endsWith('.js')), css = outputs.find(f => f.endsWith('.css'));
-  const html = fs.readFileSync('index.html', 'utf8').replace('<!--CSS-->', css ? `<link rel="stylesheet" href="./${css}">` : '').replace('<!--JS-->', `<script type="module" src="./${js}"></script>`);
+  const html = fs.readFileSync('index.html', 'utf8').replace('<!--CSS-->', css ? `<link rel="stylesheet" href="./${css}">` : '').replace('<!--JS-->', `<script type="module" src="./${js}"></script>`)
+    // Content-Security-Policy: scripts only from this site; network only to this site and the Supabase project
+    .replace('__CONNECT_SRC__', remote ? new URL(supabaseUrl).origin : '');
   fs.writeFileSync(path.join(out, 'index.html'), html);
   // service worker precache list + versioned cache name
   const sw = fs.readFileSync(path.join(out, 'sw.js'), 'utf8').replace('__VERSION__', version + '-' + Date.now()).replace('__ASSETS__', JSON.stringify(['/', '/index.html', `/${js}`, css && `/${css}`, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'].filter(Boolean)));

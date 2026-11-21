@@ -1,0 +1,10 @@
+# Weekly update PRs for npm packages and GitHub Actions (each one runs the tests before you merge).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

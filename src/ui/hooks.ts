@@ -22,5 +22,5 @@ export function useBaby(): BabyCtx | null {
 }
 
 export function userName(s: { users: Record<string, { display_name: string }> }, id?: string | null) {
-  return (id && s.users[id]?.display_name) || 'Someone';
+  return (id && s.users[id]?.display_name) || 'Former caregiver';
 }
