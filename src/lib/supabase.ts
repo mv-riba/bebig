@@ -222,6 +222,26 @@ export function startRemoteSync() {
   // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
   const note = (m: string) => { try { sessionStorage.setItem('bebig:authmsg', m); } catch { /* */ } };
+  // Branded email links point at our own domain: https://bebig.mvriba.com/?token_hash=…&type=signup|recovery|email_change
+  const q = new URLSearchParams(location.search);
+  if (q.get('token_hash') && q.get('type')) {
+    const token_hash = q.get('token_hash')!, type = q.get('type')!;
+    history.replaceState(null, '', location.pathname);
+    fetch(`${URL_}/auth/v1/verify`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ token_hash, type }) })
+      .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.msg || j.error_description || 'expired'); return j; })
+      .then(async j => {
+        const sess = toSession(j); saveAuth(sess);
+        if (type === 'recovery') {
+          const pw = prompt('Choose a new password (at least 8 characters)');
+          if (pw && pw.length >= 8) {
+            const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${sess.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+            alert(r.ok ? 'Password updated.' : 'Sorry, the password could not be changed. Please request a new link.');
+          }
+        }
+        adoptRemoteUser({ user_id: j.user.id, email: j.user.email, display_name: j.user.user_metadata?.display_name || j.user.email.split('@')[0] });
+      })
+      .catch(() => note('That link has expired or was already used. If you confirmed your email, just sign in — otherwise request a new link.'));
+  }
   if (h.get('error_description')) {
     history.replaceState(null, '', location.pathname);
     note(h.get('error_code') === 'otp_expired' ? 'That link has expired or was already used. If you confirmed your email, just sign in — otherwise request a new link.' : h.get('error_description')!.replace(/\+/g, ' '));
