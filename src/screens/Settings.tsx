@@ -65,7 +65,7 @@ export function Settings() {
       </div>
       {syncMode() === 'remote' && <SyncRow />}
       <p className="muted tiny center">Bebig {config.version} · {syncMode() === 'local' ? 'Local mode: data is stored on this device only' : 'Cloud sync on'}</p>
-      <p className="muted tiny center"><a className="link" href="https://bebig.mvriba.com/" target="_blank" rel="noopener">About Bebig, features and pricing</a></p>
+      <p className="muted tiny center"><a className="link" href="https://bebig.mvriba.com/" target="_blank" rel="noopener">Discover more about Bebig</a></p>
     </div>
   );
 }
