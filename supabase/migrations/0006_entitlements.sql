@@ -2,12 +2,13 @@
 -- Safe to run once after 0001–0005. No existing data changes.
 --
 -- Model
---   * Plus belongs to a baby profile (the family), so every caregiver of that baby gets it — one subscription per family.
+--   * Plus belongs to the family: the account that owns the baby profiles. One subscription covers every baby that
+--     account owns, and everyone who cares for those babies.
 --   * Rows in `entitlements` are written only by the server: security definer functions here (trials) and, later,
 --     the Play Billing verification Edge Function (service role). Members can read their baby's rows.
 --   * Early access: while app_settings.early_access_until is in the future, every baby has Plus.
 --     Change the date in the dashboard (SQL: update app_settings set value = '"2027-04-30T00:00:00Z"' where key = 'early_access_until').
---   * Free trial: 14 days, once per baby, only after at least 10 different days with logged activity (checked here).
+--   * Free trial: 14 days, once per family (owner account), only after at least 10 different days with logged activity (checked here).
 --   * AI phrasing is Plus-only and the daily quota is enforced here (the `assistant` function calls use_ai_quota(baby)).
 --   * Free families: owner + 1 caregiver (the "free slot"). Plus (incl. trial and early access): up to 6 caregivers.
 --     When Plus ends, extra caregivers are PAUSED, not removed: is_member() stops letting them in until Plus returns.
@@ -35,7 +36,7 @@ create or replace function public.limit_value(k text) returns integer language s
 -- ---------- entitlements ----------
 create table if not exists public.entitlements (
   entitlement_id uuid primary key default gen_random_uuid(),
-  baby_id uuid not null references public.baby_profiles(baby_id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade, -- the family: covers every baby this account owns
   plan text not null default 'plus' check (plan in ('plus')),
   source text not null check (source in ('trial', 'promo', 'play', 'stripe', 'manual')),
   product_id text,                -- e.g. bebig_plus:yearly, bebig_first_year
@@ -47,13 +48,17 @@ create table if not exists public.entitlements (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index if not exists entitlements_baby on public.entitlements (baby_id);
+create index if not exists entitlements_owner on public.entitlements (owner_id);
+
+-- the family a baby belongs to = the account that owns the profile
+create or replace function public.owner_of(b uuid) returns uuid language sql stable security definer set search_path = public as $$
+  select user_id from baby_access where baby_id = b and role = 'owner' and invitation_status = 'accepted' limit 1 $$;
 alter table public.entitlements enable row level security; -- no policies: read through plus_status(), written by server code only
 
 -- active = status allows access and now is inside the period ("cancelled" keeps access until it expires, like Play)
 create or replace function public.has_plus(b uuid) returns boolean language sql stable security definer set search_path = public as $$
   select coalesce((setting('early_access_until') #>> '{}')::timestamptz > now(), false)
-      or exists (select 1 from entitlements e where e.baby_id = b and e.status in ('active', 'grace', 'cancelled')
+      or exists (select 1 from entitlements e where e.owner_id = owner_of(b) and e.status in ('active', 'grace', 'cancelled')
                  and e.starts_at <= now() and (e.expires_at is null or e.expires_at > now())) $$;
 
 -- distinct local days with any logged feed, sleep or poo (soft-deleted entries don't count)
@@ -76,9 +81,9 @@ declare
 begin
   if not is_member(b) then raise exception 'Not a member of this baby profile' using errcode = '42501'; end if;
   select source, product_id, status, expires_at into cur from entitlements e
-    where e.baby_id = b and e.status in ('active', 'grace', 'cancelled') and e.starts_at <= now() and (e.expires_at is null or e.expires_at > now())
+    where e.owner_id = owner_of(b) and e.status in ('active', 'grace', 'cancelled') and e.starts_at <= now() and (e.expires_at is null or e.expires_at > now())
     order by (e.expires_at is null) desc, e.expires_at desc limit 1;
-  trial_used := exists (select 1 from entitlements where baby_id = b and source = 'trial');
+  trial_used := exists (select 1 from entitlements where owner_id = owner_of(b) and source = 'trial');
   days := logged_days(b);
   return jsonb_build_object(
     'plus', has_plus(b),
@@ -91,15 +96,15 @@ begin
     'checked_at', now());
 end $$;
 
--- starts the one free trial for this baby (any member can start it; it covers the whole family)
+-- starts the family's one free trial (any member can start it; it covers all the owner's babies)
 create or replace function public.start_plus_trial(b uuid) returns jsonb language plpgsql security definer set search_path = public as $$
 begin
   if not is_member(b) then raise exception 'Not a member of this baby profile' using errcode = '42501'; end if;
-  perform pg_advisory_xact_lock(hashtext('trial:' || b::text)); -- two caregivers tapping at once get one trial
-  if exists (select 1 from entitlements where baby_id = b and source = 'trial') then raise exception 'The free trial has already been used'; end if;
+  perform pg_advisory_xact_lock(hashtext('trial:' || owner_of(b)::text)); -- two caregivers tapping at once get one trial
+  if exists (select 1 from entitlements where owner_id = owner_of(b) and source = 'trial') then raise exception 'The free trial has already been used'; end if;
   if logged_days(b) < limit_value('trial_min_logged_days') then raise exception 'The free trial starts after % days of logging', limit_value('trial_min_logged_days'); end if;
-  insert into entitlements (baby_id, source, status, starts_at, expires_at, purchased_by)
-  values (b, 'trial', 'active', now(), now() + make_interval(days => limit_value('trial_days')), auth.uid());
+  insert into entitlements (owner_id, source, status, starts_at, expires_at, purchased_by)
+  values (owner_of(b), 'trial', 'active', now(), now() + make_interval(days => limit_value('trial_days')), auth.uid());
   return plus_status(b);
 end $$;
 
@@ -196,10 +201,10 @@ create or replace function public.my_paused_babies() returns table (baby_id uuid
   where a.user_id = auth.uid() and a.invitation_status = 'accepted' and a.role = 'caregiver' and not a.keeps_free_access and not has_plus(a.baby_id) $$;
 
 -- ---------- privileges ----------
-revoke all on function public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid),
+revoke all on function public.owner_of(uuid), public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid),
   public.plus_status(uuid), public.start_plus_trial(uuid), public.use_ai_quota(uuid), public.check_caregiver_limit(),
   public.maintain_free_slot(), public.refill_free_slot(), public.choose_free_caregiver(uuid), public.my_paused_babies() from public, anon;
-revoke all on function public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid), public.check_caregiver_limit(),
+revoke all on function public.owner_of(uuid), public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid), public.check_caregiver_limit(),
   public.maintain_free_slot(), public.refill_free_slot() from authenticated;
 grant execute on function public.plus_status(uuid), public.start_plus_trial(uuid), public.use_ai_quota(uuid), public.choose_free_caregiver(uuid), public.my_paused_babies() to authenticated;
 grant select on public.app_settings to anon, authenticated;

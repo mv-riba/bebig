@@ -325,7 +325,7 @@ export async function chooseFreeCaregiver(access_id: string) {
 export async function startPlusTrial(baby_id: string): Promise<PlusStatus> {
   try {
     const st = await rest('POST', 'rpc/start_plus_trial', { b: baby_id }) as PlusStatus;
-    setPlusStatus(baby_id, st); return st;
+    setPlusStatus(baby_id, st); await refreshPlus(true); return st; // refresh the owner's other babies too (one plan per family)
   } catch (e: any) {
     throw new Error(e.status === 404 ? 'Free trials aren’t available yet.' : (e.message || 'Couldn’t start the trial. Please try again.'));
   }

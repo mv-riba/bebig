@@ -23,7 +23,7 @@ update profiles set ai_consent_at = now() where user_id = '00000000-0000-0000-00
 select 'free: no AI' as t, use_ai_quota('11111111-0000-0000-0000-000000000001') = false as ok;
 
 -- members can't write entitlements or read them directly
-do $$ begin insert into entitlements (baby_id, source) values ('11111111-0000-0000-0000-000000000001','manual'); raise exception 'write FAIL';
+do $$ begin insert into entitlements (owner_id, source) values ('00000000-0000-0000-0000-00000000000a','manual'); raise exception 'write FAIL';
 exception when insufficient_privilege then raise notice 'direct entitlement write blocked ok'; end $$;
 do $$ begin perform has_plus('11111111-0000-0000-0000-000000000001'); raise exception 'has_plus FAIL';
 exception when insufficient_privilege then raise notice 'has_plus not callable ok'; end $$;
@@ -38,7 +38,14 @@ select 'trial eligible after 10 days' as t, (plus_status('11111111-0000-0000-000
 select 'trial started' as t, (start_plus_trial('11111111-0000-0000-0000-000000000001')->>'plus')::boolean as ok;
 select 'trial source' as t, plus_status('11111111-0000-0000-0000-000000000001')->>'source' = 'trial' as ok;
 do $$ begin perform start_plus_trial('11111111-0000-0000-0000-000000000001'); raise exception 'second trial FAIL';
-exception when raise_exception then if sqlerrm like '%already%' then raise notice 'one trial per baby ok'; else raise; end if; end $$;
+exception when raise_exception then if sqlerrm like '%already%' then raise notice 'one trial per family ok'; else raise; end if; end $$;
+-- a second baby of the same owner is covered by the same plan, and can't start another trial
+insert into baby_profiles (baby_id,name,date_of_birth,sex,timezone,created_by) values ('11111111-0000-0000-0000-000000000002','Sibling','2026-11-01','male','Europe/Helsinki','00000000-0000-0000-0000-00000000000a');
+select 'sibling covered by family plan' as t, (plus_status('11111111-0000-0000-0000-000000000002')->>'plus')::boolean and plus_status('11111111-0000-0000-0000-000000000002')->>'source' = 'trial' as ok;
+insert into feeding_entries (feed_id,baby_id,feeding_type,start_datetime,quantity_ml,created_by,updated_by)
+  select gen_random_uuid(),'11111111-0000-0000-0000-000000000002','formula', now() - make_interval(days => g), 90,'00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-00000000000a' from generate_series(0, 9) g;
+do $$ begin perform start_plus_trial('11111111-0000-0000-0000-000000000002'); raise exception 'sibling trial FAIL';
+exception when raise_exception then if sqlerrm like '%already%' then raise notice 'no second trial via a new baby ok'; else raise; end if; end $$;
 
 -- plus: AI allowed, more caregivers allowed
 select 'plus: AI allowed' as t, use_ai_quota('11111111-0000-0000-0000-000000000001') as ok;

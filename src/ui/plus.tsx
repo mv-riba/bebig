@@ -14,18 +14,31 @@ export interface Plus { status: PlusStatus; can: (f: Feature) => boolean; label:
 
 export function usePlus(): Plus | null {
   const ctx = useBaby();
-  const cached = useStore(s => (ctx ? s.plus?.[ctx.baby.baby_id] : undefined));
+  // one plan per family: a baby without a known status (e.g. just added) uses the status of the owner's other babies
+  const cached = useStore(s => {
+    if (!ctx) return undefined;
+    const own = s.plus?.[ctx.baby.baby_id]; if (own) return own;
+    const owner = Object.values(s.access).find(a => a.baby_id === ctx.baby.baby_id && a.role === 'owner')?.user_id;
+    const sibling = Object.values(s.access).find(a => a.role === 'owner' && a.user_id === owner && a.baby_id !== ctx.baby.baby_id && s.plus?.[a.baby_id]);
+    return sibling ? s.plus[sibling.baby_id] : undefined;
+  });
   if (!ctx) return null;
   const now = Date.now();
   const status = resolveStatus(ctx.data, cached, now, config.earlyAccessUntil);
   return { status, can: f => canUse(f, status), label: planLabel(status, now, ctx.baby.timezone), caregivers: caregiverLimit(status) };
 }
 
-/** Starts the family's one free trial (server-side with cloud sync, on this device in local mode). */
+/** Starts the family's one free trial (server-side with cloud sync, on this device in local mode).
+ *  One plan covers every baby the profile owner owns. */
 export async function startTrial(baby_id: string, data: Parameters<typeof localTrial>[0]) {
   if (syncMode() === 'remote') { const m = await import('../lib/supabase'); return m.startPlusTrial(baby_id); }
-  const st = localTrial(data, Date.now(), getState().plus?.[baby_id]);
-  setPlusStatus(baby_id, st); return st;
+  const s = getState();
+  const owner = Object.values(s.access).find(a => a.baby_id === baby_id && a.role === 'owner')?.user_id;
+  const family = Object.values(s.access).filter(a => a.role === 'owner' && a.user_id === owner).map(a => a.baby_id);
+  if (family.some(id => s.plus?.[id]?.trial_used || s.plus?.[id]?.source === 'trial')) throw new Error('The free trial has already been used.');
+  const st = localTrial(data, Date.now(), s.plus?.[baby_id]);
+  for (const id of family.length ? family : [baby_id]) setPlusStatus(id, st);
+  return st;
 }
 
 /** Owner: who keeps access when the family is on the free plan. */
@@ -106,8 +119,8 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
         <h2>{plus.label}</h2>
         {st.early_access ? <p>Thank you for being an early Bebig family. Every Plus feature is free for you during early access. Afterwards, the free plan includes you and one caregiver; anyone else is paused until you get Plus.</p>
           : st.source === 'trial' ? <p>You’re trying every Plus feature. When the trial ends, everything you logged stays — only the Plus extras switch off, and extra caregivers are paused (not removed).</p>
-            : st.plus ? <p>Plus is on for {ctx.baby.name} and everyone who cares for {ctx.baby.name.split(' ')[0]}.</p>
-              : <p>One plan covers the whole family — everyone with access to {ctx.baby.name} gets Plus.</p>}
+            : st.plus ? <p>Plus is on for all your babies and everyone who cares for them.</p>
+              : <p>One plan covers the whole family — all your babies, and everyone who cares for them.</p>}
         {!st.plus && st.trial_eligible && <TrialButton />}
         {!st.plus && !st.trial_eligible && !st.trial_used && <p className="muted small">The free trial unlocks after {LIMITS.trial_min_logged_days} days of logging ({st.logged_days} so far).</p>}
         {!st.plus && st.trial_used && <p className="muted small">Paid plans are coming with the Bebig app on Google Play.</p>}

@@ -1,4 +1,5 @@
 // Bebig Plus — what's free, what's Plus, and the current plan of a baby profile (the family).
+// One plan per family: it belongs to the account that owns the baby profiles and covers all of them.
 // Pure and framework-free (unit-tested). The server is the source of truth when cloud sync is on
 // (supabase/migrations/0006_entitlements.sql → plus_status()); this file mirrors its rules for local mode,
 // offline use and instant UI.
@@ -21,7 +22,7 @@ export const PLUS_FEATURES: { id: Feature; title: string; text: string; soon?: b
   { id: 'ai_phrasing', title: 'AI assistant', text: 'Friendly, plain-language answers to questions about your records.' },
   { id: 'long_trends', title: 'Long-range trends', text: 'How feeding and sleep change over weeks, not just days.', soon: true },
   { id: 'doctor_report', title: 'Doctor & neuvola report', text: 'A tidy PDF summary to take to check-ups.', soon: true },
-  { id: 'extra_caregivers', title: 'Whole family', text: 'Add grandparents or a nanny — one plan covers everyone. Without Plus they’re paused, never removed.' },
+  { id: 'extra_caregivers', title: 'Whole family', text: 'One plan covers all your babies. Add grandparents or a nanny too — without Plus they’re paused, never removed.' },
 ];
 
 export const ALWAYS_FREE = [
