@@ -5,6 +5,8 @@ import { useNav } from '../ui/nav';
 import { useNow, Empty } from '../ui/ui';
 import { IBottle, IPoo, IMoon, ISparkle, IChevron, IPlus, ICalendar, IBreast } from '../ui/icons';
 import { Timeline, buildTimeline, TItem, openItem, extrasForDay } from '../ui/Timeline';
+import { TrialNudge } from '../ui/plus';
+import { BabySwitcher } from '../ui/babies';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween } from '../lib/time';
@@ -18,7 +20,7 @@ export function BabyAvatar({ src, name, size = 64 }: { src?: string | null; name
 
 export function Home() {
   const ctx = useBaby(); const nav = useNav(); const now = useNow(10000);
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState(false); const [switching, setSwitching] = useState(false);
   const me = useStore(s => s.users[currentUserId() ?? '']);
   const insight = useMemo(() => ctx ? buildInsights(ctx.data, ctx.prefs.time_format, now) : null, [ctx, Math.floor(now / 60000)]);
   if (!ctx) return null;
@@ -39,11 +41,12 @@ export function Home() {
     <div className="screen home">
       <div className="blob blob-peach" aria-hidden="true" />
       <header className="home-head">
-        <BabyAvatar src={baby.photograph_url} name={baby.name} size={64} />
+        <button className="avatar-btn" onClick={() => setSwitching(true)} aria-label={`${baby.name} — switch or add a baby`}><BabyAvatar src={baby.photograph_url} name={baby.name} size={64} /></button>
         <div className="home-greet">
           <h1>{greet}{me?.display_name ? `, ${me.display_name.split(' ')[0]}` : ''}!</h1>
-          <p className="muted">{formatDateKey(today)} · {baby.name} is {describeAge(daysBetween(baby.date_of_birth, today))}</p>
+          <p className="muted">{formatDateKey(today)} · <button className="baby-switch" onClick={() => setSwitching(true)} aria-haspopup="dialog">{baby.name}<IChevron size={14} className="chev-down" /></button> is {describeAge(daysBetween(baby.date_of_birth, today))}</p>
         </div>
+        <BabySwitcher open={switching} onClose={() => setSwitching(false)} />
         <SyncBadge />
       </header>
 
@@ -91,8 +94,9 @@ export function Home() {
         <div className="sec-head"><h2>Today’s activity</h2><button className="link" onClick={() => nav.openDay(today)}><ICalendar size={16} /> Full day</button></div>
         {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} />
           : <Empty title="Nothing logged yet today" text="Use the buttons above to log a feed, poo or sleep. It only takes a couple of taps." />}
-        {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feeds · {stats.pooCount} poos{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
+        {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feed{stats.feedCount === 1 ? '' : 's'} · {stats.pooCount} poo{stats.pooCount === 1 ? '' : 's'}{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
       </section>
+      <TrialNudge />
     </div>
   );
 }

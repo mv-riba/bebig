@@ -32,7 +32,7 @@ const opts = {
   minify: !serve, sourcemap: serve ? 'inline' : false, jsx: 'automatic', loader: { '.json': 'json' }, metafile: true,
   define: {
     'process.env.NODE_ENV': JSON.stringify(serve ? 'development' : 'production'),
-    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: remote ? supabaseUrl : '', supabaseAnonKey: remote ? supabaseAnonKey : '', version }),
+    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: remote ? supabaseUrl : '', supabaseAnonKey: remote ? supabaseAnonKey : '', version, earlyAccessUntil: process.env.BEBIG_EARLY_ACCESS_UNTIL ?? cfg.earlyAccessUntil ?? '' }),
   },
 };
 

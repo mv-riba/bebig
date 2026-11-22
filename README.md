@@ -30,12 +30,23 @@ Times are stored in UTC; the baby’s IANA time zone controls display and daily 
 
 ## Going live (GitHub Pages + your domain + Supabase)
 
-1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0005 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`). In Auth → URL configuration, set the site URL to your domain.
+1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0006 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`; after 0006, `0006_entitlements.test.sql` on a fresh database). In Auth → URL configuration, set the site URL to your domain.
 2. **Config**: `bebig.config.json` holds the Supabase URL, the public anon key and the custom domain (env vars `BEBIG_SUPABASE_URL` / `BEBIG_SUPABASE_ANON_KEY` override). In GitHub *Settings → Pages* choose “GitHub Actions” and set the custom domain.
 3. **DNS**: for a subdomain add a `CNAME` record → `<github-user>.github.io`. For an apex domain add `A` records to GitHub Pages’ IPs. Then tick “Enforce HTTPS”.
 4. Optional AI phrasing: `supabase functions deploy assistant` and `supabase secrets set ANTHROPIC_API_KEY=…`.
 
 Every push to `main` runs the tests, builds and deploys.
+
+## Bebig Plus (freemium)
+
+Logging, partner sync, health notices, growth charts, summaries, 7-day trends, history and export are always free. Plus (one plan per family: it covers every baby the owner's account owns, and everyone who cares for them) adds predictions, AI-phrased answers, more caregivers and, later, long-range trends and a doctor report.
+
+- Rules: `src/lib/plans.ts` (tested in `tests/plans.test.ts`); UI: `src/ui/plus.tsx`; server: `supabase/migrations/0006_entitlements.sql`.
+- **Early access:** Plus is free for everyone until `app_settings.early_access_until` (default 1 April 2027, Helsinki). Change it in the SQL editor; `earlyAccessUntil` in `bebig.config.json` is only the offline/local-mode fallback.
+- **Trial:** 14 days, once per family, unlocked after 10 days of logging; no payment details.
+- **Caregivers:** the free plan includes the owner + one caregiver (the "free slot", first to accept unless the owner picks someone else). Others need Plus; when Plus/trial/early access ends they're **paused, not removed** (`is_member()` lets them back in automatically when Plus returns).
+- **Server enforcement:** AI phrasing needs Plus (`use_ai_quota(baby)`), invitations beyond the plan's caregiver limit are refused, and paused caregivers can't read the profile. Entitlement rows are written only by server code — Play Billing verification will add them (`source = 'play'`).
+- Deploy order: run 0006 → redeploy the `assistant` function → deploy the app. Before 0006 is run the app keeps working and treats everyone as early access.
 
 ## Open items before public release
 

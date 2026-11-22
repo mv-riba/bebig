@@ -6,6 +6,7 @@ import { IMoon, IBottle, IPoo, ISparkle, IChart, IInfo } from '../ui/icons';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatDateKey, formatTime } from '../lib/time';
 import type { AIInsight } from '../lib/types';
+import { usePlus, PlusLock, PlusBadge, TrialNudge } from '../ui/plus';
 
 const CAT_ICON = { sleep: <IMoon />, feeding: <IBottle />, poo: <IPoo />, overview: <ISparkle /> };
 
@@ -34,11 +35,13 @@ function InsightCard({ i, fmt, tz }: { i: AIInsight; fmt: '24h' | '12h'; tz: str
 }
 
 export function Insights() {
-  const ctx = useBaby(); const nav = useNav(); const now = useNow(60000);
+  const ctx = useBaby(); const nav = useNav(); const now = useNow(60000); const plus = usePlus();
   const [tab, setTab] = useState<'overview' | 'patterns' | 'predictions' | 'trends'>('overview');
   const [cat, setCat] = useState<'all' | 'sleep' | 'feeding' | 'poo'>('all');
   const rep = useMemo(() => ctx ? buildInsights(ctx.data, ctx.prefs.time_format, now) : null, [ctx, now]);
-  if (!ctx || !rep) return null;
+  if (!ctx || !rep || !plus) return null;
+  const canPredict = plus.can('predictions');
+  const lockedPredictions = <PlusLock title="Predictions are part of Bebig Plus" text={`Plus estimates ${ctx.baby.name.split(' ')[0]}’s next feed, nap and poo from your own records, with how confident each estimate is.`} />;
   const tz = ctx.baby.timezone; const fmt = ctx.prefs.time_format;
   const obs = rep.observations.filter(o => cat === 'all' || o.category === cat);
 
@@ -48,15 +51,17 @@ export function Insights() {
 
   return (
     <div className="screen insights">
-      <header className="screen-head"><h1>Insights</h1><button className="icon-btn" aria-label="Growth charts" onClick={() => nav.push({ name: 'growth' })}><IChart /></button></header>
-      <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: 'Next' }, { value: 'trends', label: 'Trends' }]} />
+      <header className="screen-head"><span /><h1>Insights</h1><button className="icon-btn" aria-label="Growth charts" onClick={() => nav.push({ name: 'growth' })}><IChart /></button></header>
+      <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: canPredict ? 'Next' : <>Next <PlusBadge /></> }, { value: 'trends', label: 'Trends' }]} />
 
       {tab === 'overview' && (rep.enoughData ? (
         <>
           {rep.overview && <div className="card overview"><ISparkle className="spark" /><p>{rep.overview}</p></div>}
           <h2 className="sec-title">Key patterns</h2>
           {rep.observations.filter(o => ['sleep-nap-window', 'feed-interval', 'poo-frequency'].includes(o.insight_id)).map(i => <InsightCard key={i.insight_id} i={i} fmt={fmt} tz={tz} />)}
-          {rep.predictions.length > 0 && <>
+          <TrialNudge />
+          {rep.predictions.length > 0 && !canPredict && <><h2 className="sec-title">Next likely events</h2>{lockedPredictions}</>}
+          {rep.predictions.length > 0 && canPredict && <>
             <h2 className="sec-title">Next likely events</h2>
             <div className="card">{rep.predictions.map(p => (
               <div key={p.insight_id} className="pred-row"><span className={`ins-ic ic-${p.category}`}>{CAT_ICON[p.category]}</span>
@@ -74,7 +79,8 @@ export function Insights() {
         </>
       ) : notEnough)}
 
-      {tab === 'predictions' && (
+      {tab === 'predictions' && !canPredict && lockedPredictions}
+      {tab === 'predictions' && canPredict && (
         <>
           <div className="alert notice soft"><IInfo size={20} /><span>Estimates come from your recorded data and can be wrong. They’re for planning only — always follow your baby’s hunger and tiredness cues.</span></div>
           {rep.predictions.length ? rep.predictions.map(i => <InsightCard key={i.insight_id} i={i} fmt={fmt} tz={tz} />) : notEnough || <Empty title="Not enough repeated events yet" text="Predictions need several recorded intervals between feeds, sleeps or bowel movements." />}

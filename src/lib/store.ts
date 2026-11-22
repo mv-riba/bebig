@@ -9,6 +9,7 @@ import { useSyncExternalStore, useRef } from 'react';
 import type {
   User, BabyProfile, BabyAccess, FeedingEntry, PooEntry, SleepEntry, GrowthMeasurement, FeedTimer, UserPrefs, Role, TrackerDef, ExtraEntry,
 } from './types';
+import type { PlusStatus } from './plans';
 
 export type Table = 'feeds' | 'poos' | 'sleeps' | 'growth' | 'babies' | 'access' | 'trackers' | 'extras';
 export interface OutboxOp { op_id: string; table: Table; row: any; queued_at: string }
@@ -39,7 +40,10 @@ export interface State {
   syncFailed: (OutboxOp & { error: string; failed_at: string })[]; // rejected by the server; kept for retry, never silently lost
   audit: AuditEvent[];
   lastSyncedAt: string | null;
+  plus: Record<string, PlusStatus>; // by baby_id: last known Bebig Plus status (server's, or a local-mode trial)
+  paused: PausedBaby[]; // profiles this user belongs to but is paused on (family's Plus ended)
 }
+export interface PausedBaby { baby_id: string; name: string; owner_name: string | null }
 
 const KEY = 'bebig:v1';
 export const uuid = () => (crypto as any).randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -55,14 +59,14 @@ export const defaultPrefs = (): UserPrefs => ({
 function empty(): State {
   return {
     version: 1, session: null, users: {}, credentials: {}, babies: {}, access: {}, feeds: {}, poos: {}, sleeps: {},
-    growth: {}, trackers: {}, extras: {}, feedTimers: {}, extraTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null,
+    growth: {}, trackers: {}, extras: {}, feedTimers: {}, extraTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null, plus: {}, paused: [],
   };
 }
 
 function load(): State {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.extraTimers ??= {}; s.syncFailed ??= []; return s; }
+    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.extraTimers ??= {}; s.syncFailed ??= []; s.plus ??= {}; s.paused ??= []; return s; }
   } catch { /* corrupted or unavailable storage */ }
   return empty();
 }
@@ -297,7 +301,7 @@ export function deleteBabyData(baby_id: string) {
       for (const [k, v] of Object.entries(s[t] as Record<string, any>)) if (v.baby_id === baby_id) delete (s[t] as any)[k];
     }
     Object.values(s.access).forEach(a => { if (a.baby_id === baby_id) delete s.access[a.access_id]; });
-    delete s.feedTimers[baby_id]; delete s.babies[baby_id];
+    delete s.feedTimers[baby_id]; delete s.babies[baby_id]; delete s.plus[baby_id];
     Object.keys(s.chats).forEach(k => { if (k.endsWith(':' + baby_id)) delete s.chats[k]; });
     queue(s, 'babies', { baby_id, deleted_at: nowIso() });
     s.audit.push({ at: nowIso(), user_id: uid, action: 'baby.deleted', detail: baby_id });
@@ -306,12 +310,32 @@ export function deleteBabyData(baby_id: string) {
 
 // ---------------- Sharing ----------------
 
-export function inviteCaregiver(baby_id: string, email: string, role: Role = 'caregiver') {
+export class PlanLimitError extends Error { readonly planLimit = true; }
+
+// mirrors the server: when the free-slot caregiver leaves, the earliest remaining caregiver takes it
+function refillFreeSlot(s: State, baby_id: string) {
+  const cg = Object.values(s.access).filter(a => a.baby_id === baby_id && a.role === 'caregiver' && a.invitation_status === 'accepted');
+  if (cg.some(a => a.keeps_free_access)) return;
+  const first = cg.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.access_id.localeCompare(b.access_id))[0];
+  if (first) first.keeps_free_access = true;
+}
+
+/** Owner: who keeps access on the free plan. Local state only — with cloud sync the server does it (choose_free_caregiver). */
+export function setFreeCaregiverLocally(access_id: string) {
+  const a = state.access[access_id]; if (!a) return;
+  assertAccess(a.baby_id, 'owner');
+  setState(s => { for (const o of Object.values(s.access)) if (o.baby_id === a.baby_id) o.keeps_free_access = o.access_id === access_id; });
+}
+
+/** `maxCaregivers`: the family's plan limit (see plans.ts caregiverLimit); the server enforces it as well. */
+export function inviteCaregiver(baby_id: string, email: string, role: Role = 'caregiver', maxCaregivers = Infinity) {
   assertAccess(baby_id, 'owner');
   email = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address.');
   const existing = Object.values(state.access).find(a => a.baby_id === baby_id && a.invited_email === email && (a.invitation_status === 'pending' || a.invitation_status === 'accepted'));
   if (existing) throw new Error(existing.invitation_status === 'accepted' ? 'This person already has access.' : 'An invitation is already pending for this email.');
+  const caregivers = Object.values(state.access).filter(a => a.baby_id === baby_id && a.role === 'caregiver' && (a.invitation_status === 'pending' || a.invitation_status === 'accepted')).length;
+  if (caregivers >= maxCaregivers) throw new PlanLimitError(`The free plan includes ${maxCaregivers} caregiver${maxCaregivers === 1 ? '' : 's'} besides you. Bebig Plus adds the whole family.`);
   const uid = currentUserId()!; const t = nowIso(); const access_id = uuid();
   setState(s => {
     s.access[access_id] = { access_id, baby_id, user_id: null, invited_email: email, role, invitation_status: 'pending', invited_by: uid, created_at: t, updated_at: t };
@@ -326,6 +350,7 @@ export function respondToInvite(access_id: string, accept: boolean) {
   setState(s => {
     const x = s.access[access_id];
     x.invitation_status = accept ? 'accepted' : 'declined'; x.user_id = accept ? uid : null; x.updated_at = nowIso();
+    if (accept && x.role === 'caregiver' && !Object.values(s.access).some(o => o.baby_id === x.baby_id && o.keeps_free_access && o.access_id !== x.access_id)) x.keeps_free_access = true;
     if (accept) s.selectedBaby[uid] = x.baby_id;
     queue(s, 'access', x);
     s.audit.push({ at: nowIso(), user_id: uid, action: accept ? 'access.accepted' : 'access.declined', detail: x.baby_id });
@@ -337,6 +362,7 @@ export function revokeAccess(access_id: string) {
   if (a.role === 'owner') throw new Error('The owner’s access cannot be revoked.');
   setState(s => {
     const x = s.access[access_id]; x.invitation_status = 'revoked'; x.updated_at = nowIso();
+    if (x.keeps_free_access) { x.keeps_free_access = false; refillFreeSlot(s, x.baby_id); }
     queue(s, 'access', x);
     s.audit.push({ at: nowIso(), user_id: currentUserId()!, action: 'access.revoked', detail: x.invited_email });
   });
@@ -441,6 +467,9 @@ export function stopSleep(e: SleepEntry) {
 }
 
 // ---------------- Prefs & chat ----------------
+
+export function setPlusStatus(baby_id: string, st: PlusStatus) { setState(s => { s.plus[baby_id] = st; }); }
+export function setPausedBabies(list: PausedBaby[]) { if (JSON.stringify(list) !== JSON.stringify(state.paused ?? [])) setState(s => { s.paused = list; }, false); }
 
 export function myPrefs(s: State = state): UserPrefs { const id = session?.user_id; return (id && s.prefs[id]) || defaultPrefs(); }
 export function updatePrefs(patch: Partial<UserPrefs>) {
