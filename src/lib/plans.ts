@@ -33,6 +33,10 @@ export const ALWAYS_FREE = [
   'Your full history and data export',
 ];
 
+/** Launch prices (decided 22 Nov 2026). Shown as information until Play Billing ships in v1.1; Google Play shows the local price at checkout. */
+export const PRICES = { monthly: '€2.99', yearly: '€29.90', yearly_note: '2 months free' };
+export const PRICE_LINE = `${PRICES.monthly} a month, or ${PRICES.yearly} a year (${PRICES.yearly_note})`;
+
 export const LIMITS = { free_caregivers: 1, plus_caregivers: 6, trial_days: 14, trial_min_logged_days: 10 };
 
 export interface PlusStatus {

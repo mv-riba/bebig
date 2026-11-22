@@ -6,7 +6,7 @@ import { useNav } from './nav';
 import { Page, useToast } from './ui';
 import { ISparkle, ICheck, IX } from './icons';
 import { useStore, getState, setPlusStatus, setFreeCaregiverLocally } from '../lib/store';
-import { resolveStatus, canUse, planLabel, localTrial, caregiverLimit, PLUS_FEATURES, ALWAYS_FREE, LIMITS, type Feature, type PlusStatus } from '../lib/plans';
+import { resolveStatus, canUse, planLabel, localTrial, caregiverLimit, PLUS_FEATURES, ALWAYS_FREE, LIMITS, PRICE_LINE, type Feature, type PlusStatus } from '../lib/plans';
 import { config } from '../lib/config';
 import { syncMode } from '../lib/sync';
 
@@ -123,7 +123,9 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
               : <p>One plan covers the whole family — all your babies, and everyone who cares for them.</p>}
         {!st.plus && st.trial_eligible && <TrialButton />}
         {!st.plus && !st.trial_eligible && !st.trial_used && <p className="muted small">The free trial unlocks after {LIMITS.trial_min_logged_days} days of logging ({st.logged_days} so far).</p>}
-        {!st.plus && st.trial_used && <p className="muted small">Paid plans are coming with the Bebig app on Google Play.</p>}
+        {!st.plus && st.trial_used && <p className="muted small">Paid plans are coming with the Bebig app on Google Play: {PRICE_LINE}.</p>}
+        {(st.early_access || st.source === 'trial') && <p className="muted small">{st.early_access ? 'After early access' : 'After the trial'}, Bebig Plus is {PRICE_LINE}. Nothing is charged unless you choose a plan.</p>}
+        {!st.plus && !st.trial_used && <p className="muted small">Bebig Plus is {PRICE_LINE}, for the whole family.</p>}
       </div>
       <h2 className="sec-title">Plus</h2>
       <div className="card list">
