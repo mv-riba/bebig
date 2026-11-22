@@ -111,7 +111,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
             <>
               <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
               <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
-              <Segmented label="Breast side" value={timer.side ?? 'none'} onChange={v => switchFeedSide(baby.baby_id, v === 'none' ? null : v as any)} options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }, { value: 'none', label: 'No side' }]} />
+              <Segmented label="Breast side" value={timer.side} onChange={v => switchFeedSide(baby.baby_id, v)} options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]} />
               <div className="btn-row">
                 {timer.segment_started_at
                   ? <button className="btn soft" onClick={() => pauseFeedTimer(baby.baby_id)}><IPause size={16} /> Pause</button>

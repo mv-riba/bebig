@@ -51,7 +51,7 @@ export function Insights() {
 
   return (
     <div className="screen insights">
-      <header className="screen-head"><span /><h1>Insights</h1><button className="icon-btn" aria-label="Growth charts" onClick={() => nav.push({ name: 'growth' })}><IChart /></button></header>
+      <header className="screen-head"><span /><h1>Insights</h1><button className="pill-btn" aria-label="Growth charts" onClick={() => nav.push({ name: 'growth' })}><IChart size={18} /> Growth</button></header>
       <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: 'Next' }, { value: 'trends', label: 'Trends' }]} />
 
       {tab === 'overview' && (rep.enoughData ? (
