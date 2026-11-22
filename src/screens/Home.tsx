@@ -62,11 +62,11 @@ export function Home() {
           {lp ? <><span className="sum-time">{formatTime(lp.datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lp.datetime, now)})</span></> : <span className="sum-ago">{nappy ? 'No poo yet' : 'None yet'}</span>}
           {nappy && <span className="sum-ago sum-wet">{stats.wetCount} wet today</span>}
         </button>
-        <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended ${formatAgo(ls.end_datetime!, now)}. Log sleep` : 'No sleep yet. Log sleep'}>
+        <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended at ${formatTime(ls.end_datetime!, tz, fmt)}, awake ${formatAgo(ls.end_datetime!, now).replace(' ago', '')}. Log sleep` : 'No sleep yet. Log sleep'}>
           <span className="sum-ic"><IMoon size={30} /></span>
           <span className="sum-label">{active ? <><span className="pulse" aria-hidden="true" /> Sleeping</> : 'Sleep'}</span>
           {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">since {formatTime(active.start_datetime, tz, fmt)}</span></>
-            : ls ? <><span className="sum-time">{formatTime(ls.start_datetime, tz, fmt)}</span><span className="sum-ago">awake {formatAgo(ls.end_datetime!, now).replace(' ago', '')}</span></> : <span className="sum-ago">None yet</span>}
+            : ls ? <><span className="sum-time">{formatTime(ls.end_datetime!, tz, fmt)}</span><span className="sum-ago">awake {formatAgo(ls.end_datetime!, now).replace(' ago', '')}</span></> : <span className="sum-ago">None yet</span>}
         </button>
       </section>
 
