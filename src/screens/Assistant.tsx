@@ -5,14 +5,15 @@ import { answer, SUGGESTIONS } from '../lib/assistant';
 import { buildInsights } from '../lib/insights';
 import { ISparkle, ISend } from '../ui/icons';
 import { syncMode } from '../lib/sync';
+import { usePlus } from '../ui/plus';
 
 export function Assistant() {
-  const ctx = useBaby();
+  const ctx = useBaby(); const plus = usePlus();
   const msgs = useStore(s => (ctx ? s.chats[chatKey(ctx.baby.baby_id)] : null) ?? []);
   const [q, setQ] = useState('');
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => { window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); }, [msgs.length]);
-  if (!ctx) return null;
+  if (!ctx || !plus) return null;
   const first = ctx.baby.name.split(' ')[0];
   const sugg = SUGGESTIONS.map(s => s.replace('my baby', first));
 
@@ -20,7 +21,9 @@ export function Assistant() {
     if (!text.trim()) return;
     setQ('');
     let replies = answer(text, ctx.data, ctx.growth, ctx.prefs.time_format, Date.now(), { trackers: ctx.allTrackers, extras: ctx.extras });
-    if (syncMode() === 'remote' && ctx.prefs.ai_consent && navigator.onLine) {
+    // predictions are Plus; facts from the records and health guidance are always free
+    if (!plus.can('predictions')) replies = replies.map(r => r.kind === 'estimate' ? { kind: 'info' as const, content: `Estimating what comes next is part of Bebig Plus. ${plus.status.trial_eligible ? 'You can try it free for 14 days — see Settings → Bebig Plus.' : 'You can still ask about anything you’ve logged, like the last feed or yesterday’s sleep.'}` } : r);
+    if (syncMode() === 'remote' && ctx.prefs.ai_consent && plus.can('ai_phrasing') && navigator.onLine) {
       const { phraseAnswer } = await import('../lib/supabase');
       replies = await Promise.all(replies.map(async r => r.kind === 'safety' ? r : { ...r, content: await phraseAnswer(ctx.baby.baby_id, text, r.content, r.kind) }));
     }

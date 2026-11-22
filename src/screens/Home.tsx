@@ -5,6 +5,7 @@ import { useNav } from '../ui/nav';
 import { useNow, Empty } from '../ui/ui';
 import { IBottle, IPoo, IMoon, ISparkle, IChevron, IPlus, ICalendar, IBreast } from '../ui/icons';
 import { Timeline, buildTimeline, TItem, openItem, extrasForDay } from '../ui/Timeline';
+import { TrialNudge } from '../ui/plus';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween } from '../lib/time';
@@ -93,6 +94,7 @@ export function Home() {
           : <Empty title="Nothing logged yet today" text="Use the buttons above to log a feed, poo or sleep. It only takes a couple of taps." />}
         {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feeds · {stats.pooCount} poos{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
       </section>
+      <TrialNudge />
     </div>
   );
 }

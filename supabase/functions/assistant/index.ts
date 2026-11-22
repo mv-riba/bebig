@@ -2,7 +2,8 @@
 // The client sends the question plus the answer already computed deterministically from records.
 // The model may only rephrase that verified answer — it never receives raw records and never adds numbers.
 // Requires: ANTHROPIC_API_KEY secret. The caller must be signed in, a member of the baby's profile, have consented
-// on the server (profiles.ai_consent_at, migration 0005) and be within the daily quota (use_ai_quota()).
+// on the server (profiles.ai_consent_at, migration 0005), and the baby must have Bebig Plus with today's quota left
+// (use_ai_quota(baby), migration 0006 — free plans get the verified answer unchanged).
 // Anything that isn't allowed gets the verified answer back unchanged, so the app never breaks.
 // Deploy: supabase functions deploy assistant
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'; // pinned: a new upstream release can't change this function silently
@@ -29,8 +30,8 @@ Deno.serve(async req => {
   if (!baby) return new Response('Forbidden', { status: 403, headers: cors });
   if (kind === 'safety') return Response.json({ content: verified_answer }, { headers: cors }); // safety copy is never rephrased
   if (typeof question !== 'string' || typeof verified_answer !== 'string') return new Response('Bad request', { status: 400, headers: cors });
-  // server-side consent + daily quota (counts this request)
-  const { data: allowed } = await supabase.rpc('use_ai_quota');
+  // server-side consent + Plus plan + daily quota (counts this request)
+  const { data: allowed } = await supabase.rpc('use_ai_quota', { b: baby_id });
   if (allowed !== true) return Response.json({ content: verified_answer }, { headers: cors });
 
   const r = await fetch('https://api.anthropic.com/v1/messages', {

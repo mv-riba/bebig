@@ -16,6 +16,7 @@ import { LogSleep } from './screens/LogSleep';
 import { MeasureForm, GrowthCharts } from './screens/Growth';
 import { useReminders } from './lib/reminders';
 import { ExtrasSettings, TrackerEditor, ExtraForm } from './screens/Extras';
+import { PlusPage } from './ui/plus';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'home', label: 'Home', icon: <IHome /> },
@@ -60,6 +61,7 @@ function Shell() {
       case 'data': return <DataPage onBack={pop} />;
       case 'privacy': return <PrivacyPage onBack={pop} />;
       case 'account': return <AccountPage onBack={pop} />;
+      case 'plus': return <PlusPage onBack={pop} />;
     }
   })();
 

@@ -4,7 +4,8 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, type Table } from './store';
+import type { PlusStatus } from './plans';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -176,7 +177,7 @@ async function pull() {
     // remove babies we can no longer see (revoked / deleted elsewhere)
     // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
     for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) {
-      delete s.babies[id];
+      delete s.babies[id]; delete s.plus[id];
       for (const t of ['feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const) for (const [k, v] of Object.entries(s[t] as any)) if ((v as any).baby_id === id) delete (s[t] as any)[k];
       for (const a of Object.values(s.access)) if (a.baby_id === id && a.user_id === me) delete s.access[a.access_id];
     }
@@ -201,7 +202,7 @@ function repairLocalOnlyBabies() {
 }
 async function cycle() {
   try {
-    await push(); await pull(); repairLocalOnlyBabies(); setInitialPullDone(true); await push();
+    await push(); await pull(); repairLocalOnlyBabies(); setInitialPullDone(true); await push(); await refreshPlus();
     const te = Object.entries(tableErrors);
     syncError = te.length ? `Some data couldn’t sync (${te.map(([t]) => t).join(', ')}): ${te[0][1]}` : null;
   }
@@ -289,6 +290,34 @@ export function startRemoteSync() {
     requireReauth('Please sign in again to switch on syncing with your other devices. Nothing you logged on this device is lost.');
   }
   return () => clearInterval(timer);
+}
+
+// ---------- Bebig Plus ----------
+// Status comes from plus_status() (migration 0006). Until that migration is deployed the call fails quietly and the
+// app falls back to the built-in early-access date, so nothing breaks.
+const plusCheckedAt: Record<string, number> = {};
+const PLUS_REFRESH_MS = 5 * 60000;
+async function refreshPlus(force = false) {
+  if (!auth) return;
+  const s = getState();
+  for (const b of Object.values(s.babies)) {
+    if (!(b as any).server_updated_at) continue; // not on the server yet
+    if (!force && Date.now() - (plusCheckedAt[b.baby_id] ?? 0) < PLUS_REFRESH_MS) continue;
+    plusCheckedAt[b.baby_id] = Date.now();
+    try { setPlusStatus(b.baby_id, await rest('POST', 'rpc/plus_status', { b: b.baby_id }) as PlusStatus); }
+    catch { /* offline or migration 0006 not deployed yet: keep the last known status */ }
+  }
+}
+export const refreshPlusNow = () => refreshPlus(true);
+
+/** Starts the family's one free trial on the server (it checks eligibility itself). */
+export async function startPlusTrial(baby_id: string): Promise<PlusStatus> {
+  try {
+    const st = await rest('POST', 'rpc/start_plus_trial', { b: baby_id }) as PlusStatus;
+    setPlusStatus(baby_id, st); return st;
+  } catch (e: any) {
+    throw new Error(e.status === 404 ? 'Free trials aren’t available yet.' : (e.message || 'Couldn’t start the trial. Please try again.'));
+  }
 }
 
 /** Optional LLM phrasing of an already-verified answer (requires the user's AI consent). Falls back silently. */
