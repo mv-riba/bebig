@@ -94,7 +94,7 @@ export function Home() {
         <div className="sec-head"><h2>Today’s activity</h2><button className="link" onClick={() => nav.openDay(today)}><ICalendar size={16} /> Full day</button></div>
         {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} />
           : <Empty title="Nothing logged yet today" text="Use the buttons above to log a feed, poo or sleep. It only takes a couple of taps." />}
-        {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feeds · {stats.pooCount} poos{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
+        {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feed{stats.feedCount === 1 ? '' : 's'} · {stats.pooCount} poo{stats.pooCount === 1 ? '' : 's'}{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
       </section>
       <TrialNudge />
     </div>
