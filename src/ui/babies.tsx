@@ -1,5 +1,5 @@
 // Switching between babies: a sheet listing every profile you can see, plus "Add a baby".
-// Each baby keeps its own records, insights and Plus plan; the selected one is remembered per user on this device.
+// Each baby keeps its own records and insights; one Plus plan covers all of the owner's babies. The selected baby is remembered per user on this device.
 import React from 'react';
 import { Sheet, useToast } from './ui';
 import { useNav } from './nav';

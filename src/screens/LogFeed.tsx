@@ -5,6 +5,7 @@ import { useBaby } from '../ui/hooks';
 import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, feedTimerTotals, getState } from '../lib/store';
 import { toLocalInput, fromLocalInput, formatClock, dayStart, zonedParts } from '../lib/time';
 import type { FeedingEntry, FeedingType } from '../lib/types';
+import { MAX_FEED_SECONDS } from '../lib/validate';
 
 export const OBSERVATIONS = ['Very hungry', 'Hungry', 'Not very hungry', 'Fell asleep during feeding', 'Difficult feeding', 'Other'];
 
@@ -51,6 +52,8 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
       if (existing) row.feed_id = existing.feed_id;
       if (fromTimer && timer) {
         const t = feedTimerTotals(timer);
+        // the database keeps feeds up to 4 hours; a longer timer was almost certainly left running
+        if (t.total > MAX_FEED_SECONDS) throw new Error('This timer has run for over 4 hours — it was probably left running. Discard it and enter the feed manually.');
         const sided = t.left + t.right > 0;
         row = { ...row, start_datetime: timer.started_at, end_datetime: new Date().toISOString(), duration_seconds: Math.round(t.total),
           breast_side: t.left > 0 && t.right > 0 ? 'both' : t.left > 0 ? 'left' : t.right > 0 ? 'right' : null,
@@ -61,7 +64,8 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
         row.start_datetime = s;
         if (type === 'breast') {
           const d = durMin != null ? durMin * 60 : null;
-          if (d != null && (d < 0 || d > 4 * 3600)) throw new Error('Duration should be between 0 and 4 hours.');
+          if (d != null && (d < 0 || d > MAX_FEED_SECONDS)) throw new Error('Duration should be between 0 and 4 hours.');
+          if (side === 'both' && ((left ?? 0) * 60 > MAX_FEED_SECONDS || (right ?? 0) * 60 > MAX_FEED_SECONDS)) throw new Error('Each side should be at most 4 hours.');
           row.duration_seconds = d; row.end_datetime = d != null ? new Date(new Date(s).getTime() + d * 1000).toISOString() : null;
           row.breast_side = side;
           row.left_duration_seconds = side === 'both' ? (left != null ? left * 60 : null) : side === 'left' ? d : null;

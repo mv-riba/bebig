@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, type Table } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
 
@@ -161,7 +161,11 @@ async function pull() {
       for (const r of results[t]!) {
         if (pendingIds.has(r[idf])) continue; // local change not yet pushed wins until it is
         const local = target[r[idf]];
-        if (!local || new Date(r.updated_at) >= new Date(local.updated_at)) {
+        // The server copy wins unless it's the very version this device already has and a local edit is newer.
+        // Comparing updated_at alone let devices drift apart for good: when a stale edit from another device
+        // reached the server later, every device holding a newer local copy kept it while the server kept the old one.
+        const serverMoved = !local?.server_updated_at || new Date(r.server_updated_at) > new Date(local.server_updated_at);
+        if (!local || serverMoved || new Date(r.updated_at) >= new Date(local.updated_at)) {
           if (t === 'sleeps' && typeof r.pauses === 'string') r.pauses = JSON.parse(r.pauses);
           if (t === 'feeds') { r.observations = r.observations || []; if (r.quantity_ml != null) r.quantity_ml = Number(r.quantity_ml); }
           if (t === 'extras' && r.value_num != null) r.value_num = Number(r.value_num);
@@ -176,11 +180,7 @@ async function pull() {
     }
     // remove babies we can no longer see (revoked / deleted elsewhere)
     // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
-    for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) {
-      delete s.babies[id]; delete s.plus[id];
-      for (const t of ['feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const) for (const [k, v] of Object.entries(s[t] as any)) if ((v as any).baby_id === id) delete (s[t] as any)[k];
-      for (const a of Object.values(s.access)) if (a.baby_id === id && a.user_id === me) delete s.access[a.access_id];
-    }
+    for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) forgetBabyLocally(s, id, me);
     s.lastSyncedAt = new Date().toISOString();
   }, false);
 }
@@ -226,7 +226,11 @@ export function startRemoteSync() {
     async reset(email) { await gotrue('recover', { email }); },
     async signOut() { try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
-    async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name }, 'return=minimal'); },
+    async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name: display_name.slice(0, 80) }, 'return=minimal'); },
+    async leaveBaby(baby_id) {
+      try { await rest('POST', 'rpc/leave_baby', { b: baby_id }); }
+      catch (e: any) { throw new Error(e.status === 404 ? 'Leaving isn’t available yet — ask the profile owner to remove you.' : e.message || 'Couldn’t leave. Check your connection and try again.'); }
+    },
     onSignedIn() { syncAiConsent(); setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); },
   });
   // links from auth emails land here with tokens (or an error) in the URL hash
@@ -277,8 +281,7 @@ export function startRemoteSync() {
   const kick = () => cycle();
   window.addEventListener('online', kick);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') kick(); });
-  let debounce: any; const orig = getState().outbox.length;
-  void orig;
+  let debounce: any;
   setInterval(() => { if (getState().outbox.length && !pushing) { clearTimeout(debounce); debounce = setTimeout(push, 300); } }, 1000);
   timer = setInterval(kick, 15000);
   // changes the server rejected (e.g. before a database update was applied) are retried every 5 minutes
@@ -331,16 +334,17 @@ export async function startPlusTrial(baby_id: string): Promise<PlusStatus> {
   }
 }
 
-/** Optional LLM phrasing of an already-verified answer (requires the user's AI consent). Falls back silently. */
 /** Records (or withdraws) consent to AI phrasing on the server, which checks it before calling the model. */
 export async function setAiConsent(on: boolean) {
   if (!auth) return;
   await rest('PATCH', `profiles?user_id=eq.${auth.user.id}`, { ai_consent_at: on ? new Date().toISOString() : null }, 'return=minimal');
 }
 
+/** Optional LLM phrasing of an already-verified answer (requires the user's AI consent). Falls back silently. */
 export async function phraseAnswer(baby_id: string, question: string, verified_answer: string, kind: string): Promise<string> {
   try {
-    const r = await fetch(`${URL_}/functions/v1/assistant`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ baby_id, question, verified_answer, kind }) });
+    // a slow or stuck function must not swallow the question: after 8 s the verified answer is shown as is
+    const r = await fetch(`${URL_}/functions/v1/assistant`, { method: 'POST', signal: AbortSignal.timeout?.(8000), headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ baby_id, question, verified_answer, kind }) });
     if (!r.ok) return verified_answer;
     return (await r.json()).content || verified_answer;
   } catch { return verified_answer; }

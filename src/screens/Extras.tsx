@@ -5,6 +5,7 @@ import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
 import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds } from '../lib/store';
 import { IPlay, IPause, IStop } from '../ui/icons';
+import { MAX_EXTRA_AMOUNT } from '../lib/validate';
 import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus } from '../lib/extras';
 import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey, formatClock, formatTime, formatDuration } from '../lib/time';
 import type { TrackerDef, TrackerIcon, TrackerKind, ExtraEntry, Level } from '../lib/types';
@@ -132,10 +133,12 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
   if (!ex && !timer && !canX) return <Page title={t.name} onCancel={onDone}><PlusLock title="Extra trackers are part of Bebig Plus" text={EXTRAS_LOCK_TEXT} /></Page>;
   const save = () => {
     setErr(null);
-    const iso = fromLocalInput(time, tz);
+    let iso: string;
+    try { iso = fromLocalInput(time, tz); } catch (x: any) { return setErr(x.message); }
     if (new Date(iso).getTime() > Date.now() + 5 * 60000) return setErr('Time can’t be in the future.');
     const num = value.trim() === '' ? null : Number(value.replace(',', '.'));
     if (t.kind === 'amount' && (num == null || !isFinite(num) || num < 0)) return setErr(`Enter the amount in ${t.unit}.`);
+    if (t.kind === 'amount' && num! > MAX_EXTRA_AMOUNT) return setErr('That amount is too large — please check it.');
     if (t.kind === 'duration' && (mins == null || mins <= 0)) return setErr('Enter how many minutes.');
     if (t.kind === 'level' && !level) return setErr('Choose a level.');
     const id = upsertEntry('extras', { ...(ex ?? {}), baby_id: ctx.baby.baby_id, tracker_id: t.tracker_id, datetime: iso,
@@ -159,7 +162,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
             {timer.segment_started_at
               ? <button className="btn soft" onClick={() => pauseExtraTimer(t.tracker_id)}><IPause size={16} /> Pause</button>
               : <button className="btn soft" onClick={() => resumeExtraTimer(t.tracker_id)}><IPlay size={16} /> Resume</button>}
-            <button className="btn primary" onClick={() => { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (r) toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => deleteEntry('extras', r.id) }); onDone(); }}><IStop size={16} /> Stop & save</button>
+            <button className="btn primary" onClick={() => { try { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (r) toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => deleteEntry('extras', r.id) }); onDone(); } catch (x: any) { setErr(x.message); } }}><IStop size={16} /> Stop & save</button>
           </div>
           <button className="link small" onClick={async () => { if (await confirm({ title: `Discard the ${t.name} timer?`, text: 'Nothing will be saved.', ok: 'Discard', danger: true })) discardExtraTimer(t.tracker_id); }}>Discard timer</button>
         </>
@@ -181,6 +184,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
       <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : `Save ${t.name}`}</button>
       </>}
       {timer && <Field label="Notes" hint="(optional, saved with the timer)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>}
+      {timer && err && <div className="alert error" role="alert">{err}</div>}
     </Page>
   );
 }
