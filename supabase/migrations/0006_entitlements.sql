@@ -9,7 +9,9 @@
 --     Change the date in the dashboard (SQL: update app_settings set value = '"2027-04-30T00:00:00Z"' where key = 'early_access_until').
 --   * Free trial: 14 days, once per baby, only after at least 10 different days with logged activity (checked here).
 --   * AI phrasing is Plus-only and the daily quota is enforced here (the `assistant` function calls use_ai_quota(baby)).
---   * Free families can have the owner + 1 caregiver; Plus families more. Existing members are never removed.
+--   * Free families: owner + 1 caregiver (the "free slot"). Plus (incl. trial and early access): up to 6 caregivers.
+--     When Plus ends, extra caregivers are PAUSED, not removed: is_member() stops letting them in until Plus returns.
+--     Nothing they logged is touched. The owner chooses who keeps the free slot (default: the first to accept).
 
 -- ---------- settings ----------
 create table if not exists public.app_settings (
@@ -134,9 +136,70 @@ end $$;
 drop trigger if exists access_caregiver_limit on public.baby_access;
 create trigger access_caregiver_limit before insert on public.baby_access for each row execute function public.check_caregiver_limit();
 
+-- ---------- free slot & pausing ----------
+alter table public.baby_access add column if not exists keeps_free_access boolean not null default false;
+create unique index if not exists baby_access_one_free_slot on public.baby_access (baby_id) where keeps_free_access;
+-- existing families: the first caregiver who accepted keeps access on the free plan
+update public.baby_access a set keeps_free_access = true
+where a.role = 'caregiver' and a.invitation_status = 'accepted'
+  and a.access_id = (select x.access_id from public.baby_access x where x.baby_id = a.baby_id and x.role = 'caregiver' and x.invitation_status = 'accepted' order by x.created_at, x.access_id limit 1)
+  and not exists (select 1 from public.baby_access y where y.baby_id = a.baby_id and y.keeps_free_access);
+
+-- members: owner, the free-slot caregiver, and every other accepted caregiver while the baby has Plus
+create or replace function public.is_member(b uuid) returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from baby_access a where a.baby_id = b and a.user_id = auth.uid() and a.invitation_status = 'accepted'
+                 and (a.role = 'owner' or a.keeps_free_access or has_plus(b))) $$;
+
+-- the slot is server-maintained: the first caregiver to accept gets it; leaving or being removed frees it
+create or replace function public.maintain_free_slot() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' and current_user in ('anon', 'authenticated') then new.keeps_free_access := old.keeps_free_access; end if;
+  if tg_op = 'INSERT' then new.keeps_free_access := false; end if;
+  if new.invitation_status <> 'accepted' or new.role <> 'caregiver' then new.keeps_free_access := false;
+  elsif tg_op = 'UPDATE' and old.invitation_status <> 'accepted'
+        and not exists (select 1 from baby_access where baby_id = new.baby_id and keeps_free_access and access_id <> new.access_id) then
+    new.keeps_free_access := true;
+  end if;
+  return new;
+end $$;
+drop trigger if exists access_free_slot on public.baby_access;
+create trigger access_free_slot before insert or update on public.baby_access for each row execute function public.maintain_free_slot();
+
+-- when the slot holder leaves, the earliest remaining caregiver takes it
+create or replace function public.refill_free_slot() returns trigger language plpgsql security definer set search_path = public as $$
+declare b uuid := coalesce(new.baby_id, old.baby_id);
+begin
+  if not exists (select 1 from baby_access where baby_id = b and keeps_free_access) then
+    update baby_access set keeps_free_access = true where access_id = (
+      select access_id from baby_access where baby_id = b and role = 'caregiver' and invitation_status = 'accepted' order by created_at, access_id limit 1);
+  end if;
+  return null;
+end $$;
+drop trigger if exists access_refill_free_slot on public.baby_access;
+create trigger access_refill_free_slot after update of invitation_status or delete on public.baby_access for each row execute function public.refill_free_slot();
+
+-- owner picks who keeps access on the free plan
+create or replace function public.choose_free_caregiver(p_access_id uuid) returns void language plpgsql security definer set search_path = public as $$
+declare b uuid;
+begin
+  select baby_id into b from baby_access where access_id = p_access_id and role = 'caregiver' and invitation_status = 'accepted';
+  if b is null then raise exception 'That person isn’t a caregiver on this profile'; end if;
+  if not is_owner(b) then raise exception 'Only the profile owner can do this' using errcode = '42501'; end if;
+  update baby_access set keeps_free_access = false where baby_id = b and keeps_free_access and access_id <> p_access_id;
+  update baby_access set keeps_free_access = true, updated_at = now() where access_id = p_access_id;
+end $$;
+
+-- babies the caller belongs to but is paused on (so the app can explain instead of just losing the profile)
+create or replace function public.my_paused_babies() returns table (baby_id uuid, name text, owner_name text) language sql stable security definer set search_path = public as $$
+  select a.baby_id, bp.name, (select p.display_name from baby_access o join profiles p on p.user_id = o.user_id where o.baby_id = a.baby_id and o.role = 'owner' limit 1)
+  from baby_access a join baby_profiles bp on bp.baby_id = a.baby_id
+  where a.user_id = auth.uid() and a.invitation_status = 'accepted' and a.role = 'caregiver' and not a.keeps_free_access and not has_plus(a.baby_id) $$;
+
 -- ---------- privileges ----------
 revoke all on function public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid),
-  public.plus_status(uuid), public.start_plus_trial(uuid), public.use_ai_quota(uuid), public.check_caregiver_limit() from public, anon;
-revoke all on function public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid), public.check_caregiver_limit() from authenticated;
-grant execute on function public.plus_status(uuid), public.start_plus_trial(uuid), public.use_ai_quota(uuid) to authenticated;
+  public.plus_status(uuid), public.start_plus_trial(uuid), public.use_ai_quota(uuid), public.check_caregiver_limit(),
+  public.maintain_free_slot(), public.refill_free_slot(), public.choose_free_caregiver(uuid), public.my_paused_babies() from public, anon;
+revoke all on function public.setting(text), public.limit_value(text), public.has_plus(uuid), public.logged_days(uuid), public.check_caregiver_limit(),
+  public.maintain_free_slot(), public.refill_free_slot() from authenticated;
+grant execute on function public.plus_status(uuid), public.start_plus_trial(uuid), public.use_ai_quota(uuid), public.choose_free_caregiver(uuid), public.my_paused_babies() to authenticated;
 grant select on public.app_settings to anon, authenticated;

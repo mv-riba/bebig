@@ -5,6 +5,7 @@ import { NavCtx, Tab, Route } from './ui/nav';
 import { ToastProvider, ConfirmProvider } from './ui/ui';
 import { IHome, ICalendar, IInsights, IChat, ISettings } from './ui/icons';
 import { AuthScreen, Onboarding, InvitesBanner } from './screens/Auth';
+import { Page } from './ui/ui';
 import { Home } from './screens/Home';
 import { Calendar } from './screens/Calendar';
 import { Insights } from './screens/Insights';
@@ -16,7 +17,7 @@ import { LogSleep } from './screens/LogSleep';
 import { MeasureForm, GrowthCharts } from './screens/Growth';
 import { useReminders } from './lib/reminders';
 import { ExtrasSettings, TrackerEditor, ExtraForm } from './screens/Extras';
-import { PlusPage } from './ui/plus';
+import { PlusPage, PausedBanner } from './ui/plus';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'home', label: 'Home', icon: <IHome /> },
@@ -62,6 +63,7 @@ function Shell() {
       case 'privacy': return <PrivacyPage onBack={pop} />;
       case 'account': return <AccountPage onBack={pop} />;
       case 'plus': return <PlusPage onBack={pop} />;
+      case 'add-baby': return <Page title="Add a baby" onBack={pop}><Onboarding onDone={pop} /></Page>;
     }
   })();
 
@@ -71,6 +73,7 @@ function Shell() {
         {overlay ? <main className="overlay">{overlay}</main> : (
           <main className="main" id="main">
             <InvitesBanner />
+            <PausedBanner />
             {tab === 'home' && <Home />}
             {tab === 'calendar' && <Calendar />}
             {tab === 'insights' && <Insights />}

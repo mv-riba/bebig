@@ -49,6 +49,15 @@ select 'plus: second caregiver' as t, count(*) = 2 as ok from baby_access where 
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000c','c@x.fi');
 select respond_invitation('22222222-0000-0000-0000-000000000001', true);
 select 'caregiver inherits plus' as t, (plus_status('11111111-0000-0000-0000-000000000001')->>'plus')::boolean as ok;
+-- caregiver can't grab the free slot through the API
+update baby_access set keeps_free_access = false where access_id = '22222222-0000-0000-0000-000000000001';
+-- the grandparent accepts during the trial
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000d','d@x.fi');
+select respond_invitation('22222222-0000-0000-0000-000000000003', true);
+select 'trial: extra caregiver can read' as t, count(*) = 1 as ok from baby_profiles;
+reset role;
+select 'free slot = first caregiver' as t, (select keeps_free_access from baby_access where access_id = '22222222-0000-0000-0000-000000000001') and not (select keeps_free_access from baby_access where access_id = '22222222-0000-0000-0000-000000000003') as ok;
+set role authenticated;
 
 -- stranger can't read status
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000e','s@x.fi');
@@ -61,6 +70,28 @@ reset role;
 update entitlements set expires_at = now() - interval '1 minute';
 set role authenticated; select pg_temp.as_user('00000000-0000-0000-0000-00000000000a','o@x.fi');
 select 'expired trial: free' as t, (plus_status('11111111-0000-0000-0000-000000000001')->>'plus')::boolean = false as ok;
+-- extra caregiver is paused (not removed); the free-slot caregiver keeps access
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000d','d@x.fi');
+select 'after trial: extra caregiver paused' as t, count(*) = 0 as ok from baby_profiles;
+select 'paused list explains it' as t, count(*) = 1 as ok from my_paused_babies();
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c','c@x.fi');
+select 'after trial: free-slot caregiver still in' as t, count(*) = 1 as ok from baby_profiles;
+select 'free-slot caregiver: nothing paused' as t, count(*) = 0 as ok from my_paused_babies();
+-- owner swaps who keeps the free slot
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a','o@x.fi');
+select choose_free_caregiver('22222222-0000-0000-0000-000000000003');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000d','d@x.fi');
+select 'swap: grandparent back in' as t, count(*) = 1 as ok from baby_profiles;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c','c@x.fi');
+select 'swap: other caregiver paused' as t, count(*) = 0 as ok from baby_profiles;
+do $$ begin perform choose_free_caregiver('22222222-0000-0000-0000-000000000001'); raise exception 'non-owner choose FAIL';
+exception when insufficient_privilege then raise notice 'only owner chooses ok'; end $$;
+-- owner removes the slot holder → the remaining caregiver gets it back automatically
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a','o@x.fi');
+update baby_access set invitation_status = 'revoked' where access_id = '22222222-0000-0000-0000-000000000003';
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c','c@x.fi');
+select 'slot refilled after removal' as t, count(*) = 1 as ok from baby_profiles;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000a','o@x.fi');
 reset role;
 update app_settings set value = to_jsonb(now() + interval '30 days') where key = 'early_access_until';
 set role authenticated; select pg_temp.as_user('00000000-0000-0000-0000-00000000000a','o@x.fi');

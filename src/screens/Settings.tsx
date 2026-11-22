@@ -13,7 +13,9 @@ import { syncMode, syncNow, syncStatus, syncDiagnostics } from '../lib/sync';
 import { formatAgo } from '../lib/time';
 import { config } from '../lib/config';
 import type { FeedingPreference } from '../lib/types';
-import { usePlus, PlusBadge } from '../ui/plus';
+import { usePlus, PlusBadge, chooseFreeCaregiver } from '../ui/plus';
+import { BabySwitcher } from '../ui/babies';
+import { memberState, pausedWhenPlusEnds, freeSlotId } from '../lib/plans';
 
 const PREF_LABEL: Record<FeedingPreference, string> = { breast: 'Breastfed', formula: 'Formula fed', combination: 'Combination fed' };
 
@@ -22,7 +24,7 @@ export function Settings() {
   const members = useStore(s => ctx ? Object.values(s.access).filter(a => a.baby_id === ctx.baby.baby_id && a.invitation_status === 'accepted').length : 0);
   const babies = useStore(s => accessibleBabies(s));
   const me = useStore(s => s.users[currentUserId() ?? '']);
-  const plus = usePlus();
+  const plus = usePlus(); const [switching, setSwitching] = useState(false);
   if (!ctx || !plus) return null;
   const { baby, prefs } = ctx;
   const go = (r: Route) => () => nav.push(r);
@@ -38,12 +40,8 @@ export function Settings() {
         <span className="row-main"><span className="row-title big">{baby.name}</span><span className="row-sub">Born {formatDateKey(baby.date_of_birth, 'long')}<br />({describeAge(age)})</span></span>
         <IChevron />
       </button>
-      {babies.length > 1 && (
-        <p className="muted small">You have access to {babies.length} baby profiles. Entries are saved to the selected one — make sure everyone uses the same profile.</p>
-      )}
-      {babies.length > 1 && (
-        <div className="chips">{babies.map(b => <Chip key={b.baby_id} on={b.baby_id === baby.baby_id} onClick={() => selectBaby(b.baby_id)}>{b.name}</Chip>)}</div>
-      )}
+      <button className="link" onClick={() => setSwitching(true)}>{babies.length > 1 ? `Switch baby (${babies.length} profiles) or add one` : 'Add another baby'}</button>
+      <BabySwitcher open={switching} onClose={() => setSwitching(false)} />
       <div className="sec-head"><h2>Birth details</h2><button className="link" onClick={go({ name: 'profile' })}><IEdit size={16} /> {hasBirth ? 'Edit' : 'Add'}</button></div>
       <button className="card kv" onClick={go({ name: 'profile' })} aria-label="Edit birth details">
         <div><span>Birth weight</span><strong>{baby.birth_weight_grams ? (baby.birth_weight_grams / 1000).toFixed(2) + ' kg' : <em className="muted">Not added</em>}</strong></div>
@@ -170,14 +168,36 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
   const [email, setEmail] = useState(''); const [err, setErr] = useState<string | null>(null); const [limitHit, setLimitHit] = useState(false);
   const invite = () => { setErr(null); setLimitHit(false); try { inviteCaregiver(b.baby_id, email, 'caregiver', plus?.caregivers); setEmail(''); toast('Invitation created'); } catch (e: any) { setErr(e.message); setLimitHit(!!e.planLimit); } };
   const active = rows.filter(r => r.invitation_status === 'accepted'), pending = rows.filter(r => r.invitation_status === 'pending'), revoked = rows.filter(r => r.invitation_status === 'revoked');
+  if (!plus) return null;
+  const nameOf = (a: typeof rows[number]) => users[a.user_id!]?.display_name ?? a.invited_email;
+  const STATE_LABEL = { owner: 'Owner', free: 'Caregiver', plus: 'Caregiver · with Plus', paused: 'Paused — needs Bebig Plus', pending: 'Invited' };
+  const st = plus.status;
+  const temporary = st.plus && (st.early_access || st.source === 'trial' || st.status === 'cancelled');
+  const willPause = temporary ? pausedWhenPlusEnds(active) : [];
+  const slot = active.find(a => a.access_id === freeSlotId(active));
+  const keep = async (access_id: string) => { try { await chooseFreeCaregiver(access_id); toast('Updated who keeps access on the free plan'); } catch (e: any) { toast(e.message); } };
   return (
     <Page title="Shared access" onBack={onBack}>
       <h2 className="sec-title">Members</h2>
-      <div className="card list">{active.map(a => (
-        <Row key={a.access_id} icon={<span className="avatar avatar-ph sm">{(users[a.user_id!]?.display_name ?? a.invited_email)[0].toUpperCase()}</span>}
-          title={users[a.user_id!]?.display_name ?? a.invited_email} sub={`${a.invited_email} · ${a.role === 'owner' ? 'Owner' : 'Caregiver'}`}
-          right={isOwner && a.role !== 'owner' ? <button className="btn soft small danger" onClick={async () => { if (await confirm({ title: 'Revoke access?', text: `${a.invited_email} will no longer see ${b.name}’s records.`, ok: 'Revoke', danger: true })) { revokeAccess(a.access_id); toast('Access revoked'); } }}>Revoke</button> : null} />
-      ))}</div>
+      <div className="card list">{active.map(a => {
+        const ms = memberState(a, active, st);
+        return (
+          <Row key={a.access_id} icon={<span className={`avatar avatar-ph sm ${ms === 'paused' ? 'paused' : ''}`}>{nameOf(a)[0].toUpperCase()}</span>}
+            title={nameOf(a)} sub={<>{a.invited_email} · {STATE_LABEL[ms]}{ms === 'free' && active.length > 2 && !st.plus ? ' · on the free plan' : ''}</>}
+            right={isOwner && a.role !== 'owner' ? <span className="btn-row">
+              {ms !== 'free' && active.length > 2 && (ms === 'paused' || temporary) && <button className="btn soft small" onClick={() => keep(a.access_id)}>{ms === 'paused' ? 'Unpause' : 'Keep on free'}</button>}
+              <button className="btn soft small danger" onClick={async () => { if (await confirm({ title: 'Revoke access?', text: `${a.invited_email} will no longer see ${b.name}’s records.`, ok: 'Revoke', danger: true })) { revokeAccess(a.access_id); toast('Access revoked'); } }}>Revoke</button>
+            </span> : null} />
+        );
+      })}</div>
+      {isOwner && willPause.length > 0 && slot && (
+        <div className="alert notice"><PlusBadge /><span>
+          {st.early_access ? 'When early access ends' : st.source === 'trial' ? 'When the trial ends' : 'When Plus ends'}, the free plan includes you and one caregiver ({nameOf(slot)}). {willPause.map(nameOf).join(', ')} will be paused — not removed — until you get Plus. Use “Keep on free” to choose someone else.
+        </span></div>
+      )}
+      {isOwner && !st.plus && active.some(a => memberState(a, active, st) === 'paused') && (
+        <div className="alert notice"><PlusBadge /><span>Paused caregivers can’t see {b.name}’s records until you get Bebig Plus. Nothing they logged has been deleted. <button className="link" onClick={() => nav.push({ name: 'plus' })}>See Bebig Plus</button></span></div>
+      )}
       {pending.length > 0 && <><h2 className="sec-title">Pending invitations</h2><div className="card list">{pending.map(a => (
         <Row key={a.access_id} title={a.invited_email} sub="Waiting for them to sign in and accept" right={isOwner ? <button className="btn soft small" onClick={() => revokeAccess(a.access_id)}>Cancel</button> : null} />
       ))}</div></>}

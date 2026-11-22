@@ -44,7 +44,8 @@ Logging, partner sync, health notices, growth charts, summaries, 7-day trends, h
 - Rules: `src/lib/plans.ts` (tested in `tests/plans.test.ts`); UI: `src/ui/plus.tsx`; server: `supabase/migrations/0006_entitlements.sql`.
 - **Early access:** Plus is free for everyone until `app_settings.early_access_until` (default 1 April 2027, Helsinki). Change it in the SQL editor; `earlyAccessUntil` in `bebig.config.json` is only the offline/local-mode fallback.
 - **Trial:** 14 days, once per baby, unlocked after 10 days of logging; no payment details.
-- **Server enforcement:** AI phrasing needs Plus (`use_ai_quota(baby)`), and invitations beyond the plan's caregiver limit are refused. Entitlement rows are written only by server code — Play Billing verification will add them (`source = 'play'`).
+- **Caregivers:** the free plan includes the owner + one caregiver (the "free slot", first to accept unless the owner picks someone else). Others need Plus; when Plus/trial/early access ends they're **paused, not removed** (`is_member()` lets them back in automatically when Plus returns).
+- **Server enforcement:** AI phrasing needs Plus (`use_ai_quota(baby)`), invitations beyond the plan's caregiver limit are refused, and paused caregivers can't read the profile. Entitlement rows are written only by server code — Play Billing verification will add them (`source = 'play'`).
 - Deploy order: run 0006 → redeploy the `assistant` function → deploy the app. Before 0006 is run the app keeps working and treats everyone as early access.
 
 ## Open items before public release

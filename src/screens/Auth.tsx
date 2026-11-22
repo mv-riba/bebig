@@ -1,3 +1,4 @@
+import { PausedBanner } from '../ui/plus';
 import React, { useState } from 'react';
 import { Field, Segmented, Wave } from '../ui/ui';
 import { register, signIn, resetPassword, createBaby, respondToInvite, useStore, pendingInvitesForMe, signOut } from '../lib/store';
@@ -79,7 +80,7 @@ export function InvitesBanner() {
   );
 }
 
-export function Onboarding() {
+export function Onboarding({ onDone }: { onDone?: () => void } = {}) {
   const tz0 = guessTimezone();
   const [f, setF] = useState({ name: '', dob: '', tob: '', sex: '' as Sex | '', tz: tz0, pref: 'breast' as FeedingPreference, gaw: '', gad: '', bw: '', bl: '', bh: '' });
   const [photo, setPhoto] = useState<string | null>(null); const [more, setMore] = useState(false); const [err, setErr] = useState<string | null>(null);
@@ -96,12 +97,13 @@ export function Onboarding() {
     createBaby({ name: f.name.trim(), date_of_birth: f.dob, time_of_birth: f.tob || null, sex: f.sex, timezone: f.tz, feeding_preference: f.pref, photograph_url: photo,
       gestational_age_weeks: gw, gestational_age_days: gw != null ? num(f.gad) ?? 0 : null,
       birth_weight_grams: bw != null ? Math.round(bw * 1000) : null, birth_length_mm: bl != null ? Math.round(bl * 10) : null, birth_head_circumference_mm: bh != null ? Math.round(bh * 10) : null });
+    onDone?.();
   };
   return (
-    <div className="onboarding page">
-      <div className="blob blob-peach" aria-hidden="true" />
-      <div className="auth-brand"><Logo /><h1>Welcome to Bebig</h1><p className="muted">Let’s set up your baby’s profile.</p></div>
-      <InvitesBanner />
+    <div className={`onboarding page ${onDone ? 'embedded' : ''}`}>
+      {!onDone && <div className="blob blob-peach" aria-hidden="true" />}
+      {!onDone && <div className="auth-brand"><Logo /><h1>Welcome to Bebig</h1><p className="muted">Let’s set up your baby’s profile.</p></div>}
+      {!onDone && <><InvitesBanner /><PausedBanner /></>}
       <div className="card form-card">
         <label className="photo-pick">
           {photo ? <img src={photo} alt="Baby" className="avatar" width={84} height={84} /> : <span className="avatar avatar-ph" style={{ width: 84, height: 84 }}>＋</span>}
@@ -124,10 +126,10 @@ export function Onboarding() {
         {err && <div className="alert error" role="alert">{err}</div>}
         <button className="btn primary block" onClick={save}>Create profile</button>
       </div>
-      <div className="center onboard-alt">
+      {onDone ? <p className="muted small center">The new baby gets their own records, insights and sharing. Switch between babies by tapping the name on Home.</p> : <div className="center onboard-alt">
         <button className="link" onClick={() => createDemoBaby()}>Explore with sample data instead</button>
         <button className="link small muted" onClick={() => signOut()}>Sign out</button>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -6,6 +6,7 @@
 // Principle: logging, sync with one partner, safety information, basic summaries, export and full history
 // are always free. Plus is about what Bebig does with the data.
 import type { Data } from './calc';
+import type { BabyAccess } from './types';
 import { dateKey, formatDateKey } from './time';
 
 export type Feature =
@@ -20,7 +21,7 @@ export const PLUS_FEATURES: { id: Feature; title: string; text: string; soon?: b
   { id: 'ai_phrasing', title: 'AI assistant', text: 'Friendly, plain-language answers to questions about your records.' },
   { id: 'long_trends', title: 'Long-range trends', text: 'How feeding and sleep change over weeks, not just days.', soon: true },
   { id: 'doctor_report', title: 'Doctor & neuvola report', text: 'A tidy PDF summary to take to check-ups.', soon: true },
-  { id: 'extra_caregivers', title: 'Whole family', text: 'Add grandparents or a nanny — one plan covers everyone.' },
+  { id: 'extra_caregivers', title: 'Whole family', text: 'Add grandparents or a nanny — one plan covers everyone. Without Plus they’re paused, never removed.' },
 ];
 
 export const ALWAYS_FREE = [
@@ -88,6 +89,32 @@ export function canUse(f: Feature, st: PlusStatus): boolean {
 }
 
 export const caregiverLimit = (st: PlusStatus) => (st.plus ? LIMITS.plus_caregivers : LIMITS.free_caregivers);
+
+// ---------- caregivers on the free plan ----------
+// The owner and one caregiver (the "free slot") always have access. Other caregivers need Plus; without it they're
+// paused — nothing is deleted and they come back automatically when Plus returns. The server enforces this in is_member().
+const acceptedCaregivers = (rows: BabyAccess[]) => rows.filter(a => a.role === 'caregiver' && a.invitation_status === 'accepted')
+  .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.access_id.localeCompare(b.access_id));
+
+/** access_id of the caregiver who keeps access on the free plan (server flag; earliest accepted as a fallback). */
+export function freeSlotId(rows: BabyAccess[]): string | null {
+  const cg = acceptedCaregivers(rows);
+  return (cg.find(a => a.keeps_free_access) ?? cg[0])?.access_id ?? null;
+}
+
+export type MemberState = 'owner' | 'free' | 'plus' | 'paused' | 'pending';
+export function memberState(a: BabyAccess, rows: BabyAccess[], st: PlusStatus): MemberState {
+  if (a.invitation_status === 'pending') return 'pending';
+  if (a.role === 'owner') return 'owner';
+  if (a.access_id === freeSlotId(rows)) return 'free';
+  return st.plus ? 'plus' : 'paused';
+}
+
+/** Caregivers who will be paused when the current Plus period ends (trial / early access / cancelled plan). */
+export function pausedWhenPlusEnds(rows: BabyAccess[]): BabyAccess[] {
+  const slot = freeSlotId(rows);
+  return acceptedCaregivers(rows).filter(a => a.access_id !== slot);
+}
 
 /** A local-mode trial (no server). With cloud sync the server creates it (start_plus_trial). */
 export function localTrial(d: Data, now: number, prev?: PlusStatus): PlusStatus {

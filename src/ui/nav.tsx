@@ -8,7 +8,7 @@ export type Route =
   | { name: 'tracker'; id?: string }
   | { name: 'extra'; trackerId?: string; entryId?: string; onKey?: string }
   | { name: 'extras-settings' }
-  | { name: 'profile' | 'feeding-pref' | 'sharing' | 'prefs' | 'data' | 'privacy' | 'account' | 'plus' };
+  | { name: 'profile' | 'feeding-pref' | 'sharing' | 'prefs' | 'data' | 'privacy' | 'account' | 'plus' | 'add-baby' };
 
 export interface Nav { tab: Tab; setTab: (t: Tab) => void; push: (r: Route) => void; pop: () => void; calendarKey: string | null; openDay: (k: string) => void; selectDay: (k: string) => void }
 export const NavCtx = createContext<Nav>(null as any);

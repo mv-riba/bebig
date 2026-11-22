@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, type Table } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
 
@@ -297,8 +297,13 @@ export function startRemoteSync() {
 // app falls back to the built-in early-access date, so nothing breaks.
 const plusCheckedAt: Record<string, number> = {};
 const PLUS_REFRESH_MS = 5 * 60000;
+let pausedCheckedAt = 0;
 async function refreshPlus(force = false) {
   if (!auth) return;
+  if (force || Date.now() - pausedCheckedAt > PLUS_REFRESH_MS) {
+    pausedCheckedAt = Date.now();
+    try { setPausedBabies(await rest('POST', 'rpc/my_paused_babies', {}) as any[]); } catch { /* not deployed yet / offline */ }
+  }
   const s = getState();
   for (const b of Object.values(s.babies)) {
     if (!(b as any).server_updated_at) continue; // not on the server yet
@@ -309,6 +314,12 @@ async function refreshPlus(force = false) {
   }
 }
 export const refreshPlusNow = () => refreshPlus(true);
+
+/** Owner chooses which caregiver keeps access on the free plan. */
+export async function chooseFreeCaregiver(access_id: string) {
+  await rest('POST', 'rpc/choose_free_caregiver', { p_access_id: access_id });
+  await cycle();
+}
 
 /** Starts the family's one free trial on the server (it checks eligibility itself). */
 export async function startPlusTrial(baby_id: string): Promise<PlusStatus> {

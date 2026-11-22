@@ -59,3 +59,19 @@ test('free families get one caregiver, Plus families more', () => {
   assert.equal(caregiverLimit(free), 1);
   assert.ok(caregiverLimit(plus) > 1);
 });
+
+test('caregivers: owner + one free slot always in; others need Plus and are paused (not removed) without it', () => {
+  const { memberState, freeSlotId, pausedWhenPlusEnds } = plans;
+  const row = (id: string, role: string, created_at: string, extra: any = {}): any => ({ access_id: id, baby_id: 'b', role, invitation_status: 'accepted', created_at, ...extra });
+  const rows = [row('o', 'owner', '2026-10-01'), row('dad', 'caregiver', '2026-10-02'), row('gran', 'caregiver', '2026-10-05')];
+  assert.equal(freeSlotId(rows), 'dad'); // earliest caregiver by default
+  const free = resolveStatus(data(1), undefined, NOW, null);
+  const plus = resolveStatus(data(1), undefined, NOW, '2099-01-01T00:00:00Z');
+  assert.deepEqual(rows.map(r => memberState(r, rows, free)), ['owner', 'free', 'paused']);
+  assert.deepEqual(rows.map(r => memberState(r, rows, plus)), ['owner', 'free', 'plus']);
+  assert.deepEqual(pausedWhenPlusEnds(rows).map(r => r.access_id), ['gran']);
+  // the owner chose grandma for the free slot (server flag)
+  const chosen = rows.map(r => ({ ...r, keeps_free_access: r.access_id === 'gran' }));
+  assert.equal(freeSlotId(chosen), 'gran');
+  assert.deepEqual(chosen.map(r => memberState(r, chosen, free)), ['owner', 'paused', 'free']);
+});

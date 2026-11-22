@@ -41,7 +41,9 @@ export interface State {
   audit: AuditEvent[];
   lastSyncedAt: string | null;
   plus: Record<string, PlusStatus>; // by baby_id: last known Bebig Plus status (server's, or a local-mode trial)
+  paused: PausedBaby[]; // profiles this user belongs to but is paused on (family's Plus ended)
 }
+export interface PausedBaby { baby_id: string; name: string; owner_name: string | null }
 
 const KEY = 'bebig:v1';
 export const uuid = () => (crypto as any).randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -57,14 +59,14 @@ export const defaultPrefs = (): UserPrefs => ({
 function empty(): State {
   return {
     version: 1, session: null, users: {}, credentials: {}, babies: {}, access: {}, feeds: {}, poos: {}, sleeps: {},
-    growth: {}, trackers: {}, extras: {}, feedTimers: {}, extraTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null, plus: {},
+    growth: {}, trackers: {}, extras: {}, feedTimers: {}, extraTimers: {}, prefs: {}, selectedBaby: {}, chats: {}, outbox: [], syncFailed: [], audit: [], lastSyncedAt: null, plus: {}, paused: [],
   };
 }
 
 function load(): State {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.extraTimers ??= {}; s.syncFailed ??= []; s.plus ??= {}; return s; }
+    if (raw) { const s = { ...empty(), ...JSON.parse(raw) }; s.trackers ??= {}; s.extras ??= {}; s.extraTimers ??= {}; s.syncFailed ??= []; s.plus ??= {}; s.paused ??= []; return s; }
   } catch { /* corrupted or unavailable storage */ }
   return empty();
 }
@@ -310,6 +312,21 @@ export function deleteBabyData(baby_id: string) {
 
 export class PlanLimitError extends Error { readonly planLimit = true; }
 
+// mirrors the server: when the free-slot caregiver leaves, the earliest remaining caregiver takes it
+function refillFreeSlot(s: State, baby_id: string) {
+  const cg = Object.values(s.access).filter(a => a.baby_id === baby_id && a.role === 'caregiver' && a.invitation_status === 'accepted');
+  if (cg.some(a => a.keeps_free_access)) return;
+  const first = cg.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.access_id.localeCompare(b.access_id))[0];
+  if (first) first.keeps_free_access = true;
+}
+
+/** Owner: who keeps access on the free plan. Local state only — with cloud sync the server does it (choose_free_caregiver). */
+export function setFreeCaregiverLocally(access_id: string) {
+  const a = state.access[access_id]; if (!a) return;
+  assertAccess(a.baby_id, 'owner');
+  setState(s => { for (const o of Object.values(s.access)) if (o.baby_id === a.baby_id) o.keeps_free_access = o.access_id === access_id; });
+}
+
 /** `maxCaregivers`: the family's plan limit (see plans.ts caregiverLimit); the server enforces it as well. */
 export function inviteCaregiver(baby_id: string, email: string, role: Role = 'caregiver', maxCaregivers = Infinity) {
   assertAccess(baby_id, 'owner');
@@ -333,6 +350,7 @@ export function respondToInvite(access_id: string, accept: boolean) {
   setState(s => {
     const x = s.access[access_id];
     x.invitation_status = accept ? 'accepted' : 'declined'; x.user_id = accept ? uid : null; x.updated_at = nowIso();
+    if (accept && x.role === 'caregiver' && !Object.values(s.access).some(o => o.baby_id === x.baby_id && o.keeps_free_access && o.access_id !== x.access_id)) x.keeps_free_access = true;
     if (accept) s.selectedBaby[uid] = x.baby_id;
     queue(s, 'access', x);
     s.audit.push({ at: nowIso(), user_id: uid, action: accept ? 'access.accepted' : 'access.declined', detail: x.baby_id });
@@ -344,6 +362,7 @@ export function revokeAccess(access_id: string) {
   if (a.role === 'owner') throw new Error('The owner’s access cannot be revoked.');
   setState(s => {
     const x = s.access[access_id]; x.invitation_status = 'revoked'; x.updated_at = nowIso();
+    if (x.keeps_free_access) { x.keeps_free_access = false; refillFreeSlot(s, x.baby_id); }
     queue(s, 'access', x);
     s.audit.push({ at: nowIso(), user_id: currentUserId()!, action: 'access.revoked', detail: x.invited_email });
   });
@@ -450,6 +469,7 @@ export function stopSleep(e: SleepEntry) {
 // ---------------- Prefs & chat ----------------
 
 export function setPlusStatus(baby_id: string, st: PlusStatus) { setState(s => { s.plus[baby_id] = st; }); }
+export function setPausedBabies(list: PausedBaby[]) { if (JSON.stringify(list) !== JSON.stringify(state.paused ?? [])) setState(s => { s.paused = list; }, false); }
 
 export function myPrefs(s: State = state): UserPrefs { const id = session?.user_id; return (id && s.prefs[id]) || defaultPrefs(); }
 export function updatePrefs(patch: Partial<UserPrefs>) {

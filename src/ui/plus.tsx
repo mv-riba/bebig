@@ -5,7 +5,7 @@ import { useBaby } from './hooks';
 import { useNav } from './nav';
 import { Page, useToast } from './ui';
 import { ISparkle, ICheck, IX } from './icons';
-import { useStore, getState, setPlusStatus } from '../lib/store';
+import { useStore, getState, setPlusStatus, setFreeCaregiverLocally } from '../lib/store';
 import { resolveStatus, canUse, planLabel, localTrial, caregiverLimit, PLUS_FEATURES, ALWAYS_FREE, LIMITS, type Feature, type PlusStatus } from '../lib/plans';
 import { config } from '../lib/config';
 import { syncMode } from '../lib/sync';
@@ -26,6 +26,24 @@ export async function startTrial(baby_id: string, data: Parameters<typeof localT
   if (syncMode() === 'remote') { const m = await import('../lib/supabase'); return m.startPlusTrial(baby_id); }
   const st = localTrial(data, Date.now(), getState().plus?.[baby_id]);
   setPlusStatus(baby_id, st); return st;
+}
+
+/** Owner: who keeps access when the family is on the free plan. */
+export async function chooseFreeCaregiver(access_id: string) {
+  if (syncMode() === 'remote') { const m = await import('../lib/supabase'); return m.chooseFreeCaregiver(access_id); }
+  setFreeCaregiverLocally(access_id);
+}
+
+/** For a caregiver whose access is paused because the family's Plus ended. */
+export function PausedBanner() {
+  const paused = useStore(s => s.paused ?? []);
+  if (!paused.length) return null;
+  return <>{paused.map(p => (
+    <div key={p.baby_id} className="alert notice" role="status">
+      <ISparkle size={20} />
+      <span>Your access to <strong>{p.name}</strong> is paused because the family’s Bebig Plus has ended. Nothing has been deleted — it comes back as soon as {p.owner_name ?? 'the profile owner'} renews Plus or chooses you as the caregiver on the free plan.</span>
+    </div>
+  ))}</>;
 }
 
 export function PlusBadge() { return <span className="badge plus-badge"><ISparkle size={11} /> Plus</span>; }
@@ -86,8 +104,8 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
       <div className="card plus-hero">
         <ISparkle size={30} className="spark" />
         <h2>{plus.label}</h2>
-        {st.early_access ? <p>Thank you for being an early Bebig family. Every Plus feature is free for you during early access.</p>
-          : st.source === 'trial' ? <p>You’re trying every Plus feature. When the trial ends, everything you logged stays — only the Plus extras switch off.</p>
+        {st.early_access ? <p>Thank you for being an early Bebig family. Every Plus feature is free for you during early access. Afterwards, the free plan includes you and one caregiver; anyone else is paused until you get Plus.</p>
+          : st.source === 'trial' ? <p>You’re trying every Plus feature. When the trial ends, everything you logged stays — only the Plus extras switch off, and extra caregivers are paused (not removed).</p>
             : st.plus ? <p>Plus is on for {ctx.baby.name} and everyone who cares for {ctx.baby.name.split(' ')[0]}.</p>
               : <p>One plan covers the whole family — everyone with access to {ctx.baby.name} gets Plus.</p>}
         {!st.plus && st.trial_eligible && <TrialButton />}

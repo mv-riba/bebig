@@ -46,6 +46,7 @@ export interface BabyAccess {
   invited_by: ID | null;
   created_at: string;
   updated_at: string;
+  keeps_free_access?: boolean; // server-maintained: the caregiver who keeps access on the free plan (migration 0006)
 }
 
 interface Audited {
