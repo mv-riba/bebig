@@ -5,7 +5,8 @@ import { answer, SUGGESTIONS } from '../lib/assistant';
 import { buildInsights } from '../lib/insights';
 import { ISparkle, ISend } from '../ui/icons';
 import { syncMode } from '../lib/sync';
-import { usePlus } from '../ui/plus';
+import { usePlus, PlusBadge, PlusLink, PlusNote } from '../ui/plus';
+import { LIMITS } from '../lib/plans';
 
 export function Assistant() {
   const ctx = useBaby(); const plus = usePlus();
@@ -20,12 +21,12 @@ export function Assistant() {
   const ask = async (text: string) => {
     if (!text.trim()) return;
     setQ('');
-    let replies = answer(text, ctx.data, ctx.growth, ctx.prefs.time_format, Date.now(), { trackers: ctx.allTrackers, extras: ctx.extras });
+    let replies: { kind: 'fact' | 'estimate' | 'safety' | 'info' | 'plus'; content: string }[] = answer(text, ctx.data, ctx.growth, ctx.prefs.time_format, Date.now(), { trackers: ctx.allTrackers, extras: ctx.extras });
     // predictions are Plus; facts from the records and health guidance are always free
-    if (!plus.can('predictions')) replies = replies.map(r => r.kind === 'estimate' ? { kind: 'info' as const, content: `Estimating what comes next is part of Bebig Plus. ${plus.status.trial_eligible ? 'You can try it free for 14 days — see Settings → Bebig Plus.' : 'You can still ask about anything you’ve logged, like the last feed or yesterday’s sleep.'}` } : r);
+    if (!plus.can('predictions')) replies = replies.map(r => r.kind === 'estimate' ? { kind: 'plus' as const, content: `Estimating what comes next is part of Bebig Plus. ${plus.status.trial_eligible ? `You can try it free for ${LIMITS.trial_days} days.` : 'You can still ask about anything you’ve logged, like the last feed or yesterday’s sleep.'}` } : r);
     if (syncMode() === 'remote' && ctx.prefs.ai_consent && plus.can('ai_phrasing') && navigator.onLine) {
       const { phraseAnswer } = await import('../lib/supabase');
-      replies = await Promise.all(replies.map(async r => r.kind === 'safety' ? r : { ...r, content: await phraseAnswer(ctx.baby.baby_id, text, r.content, r.kind) }));
+      replies = await Promise.all(replies.map(async r => r.kind === 'safety' || r.kind === 'plus' ? r : { ...r, content: await phraseAnswer(ctx.baby.baby_id, text, r.content, r.kind) }));
     }
     appendChat(ctx.baby.baby_id, [
       { id: uuid(), role: 'user', content: text.trim(), created_at: nowIso() },
@@ -47,7 +48,7 @@ export function Assistant() {
         {msgs.map(m => m.role === 'user'
           ? <div key={m.id} className="msg me"><div className="bubble">{m.content}</div></div>
           : <div key={m.id} className="msg bot"><span className="bot-av" aria-hidden="true"><ISparkle size={18} /></span>
-            <div className={`bubble kind-${m.kind}`}>{m.kind === 'estimate' && <span className="tag">Estimate</span>}{m.kind === 'fact' && <span className="tag tag-fact">From your records</span>}{m.kind === 'safety' && <span className="tag tag-safety">Health question</span>}{m.content.split('\n').map((l, i) => <React.Fragment key={i}>{i > 0 && <br />}{l}</React.Fragment>)}</div></div>)}
+            <div className={`bubble kind-${m.kind}`}>{m.kind === 'estimate' && <span className="tag">Estimate <PlusBadge /></span>}{m.kind === 'plus' && <span className="tag"><PlusBadge /></span>}{m.kind === 'fact' && <span className="tag tag-fact">From your records</span>}{m.kind === 'safety' && <span className="tag tag-safety">Health question</span>}{m.content.split('\n').map((l, i) => <React.Fragment key={i}>{i > 0 && <br />}{l}</React.Fragment>)}{m.kind === 'plus' && <><br /><PlusLink /></>}</div></div>)}
         <div ref={end} />
       </div>
       <div className="chat-foot">
@@ -56,6 +57,7 @@ export function Assistant() {
           <input aria-label="Ask a question" placeholder="Ask a question…" value={q} onChange={e => setQ(e.target.value)} />
           <button className="send" aria-label="Send" disabled={!q.trim()}><ISend size={20} /></button>
         </form>
+        {!plus.status.plus && <PlusNote>Questions about your records are free. Predictions and friendlier AI-written answers are part of Bebig Plus.</PlusNote>}
         <p className="muted tiny center">Answers are calculated from your records. Not medical advice.</p>
       </div>
     </div>

@@ -16,7 +16,7 @@ export interface OutboxOp { op_id: string; table: Table; row: any; queued_at: st
 export interface AuditEvent { at: string; user_id: string; action: string; detail?: string }
 interface LocalCredential { user_id: string; salt: string; hash: string }
 
-export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; created_at: string; kind?: 'fact' | 'estimate' | 'safety' | 'info' }
+export interface ChatMessage { id: string; role: 'user' | 'assistant'; content: string; created_at: string; kind?: 'fact' | 'estimate' | 'safety' | 'info' | 'plus' }
 
 export interface State {
   version: 1;

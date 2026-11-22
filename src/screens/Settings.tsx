@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useBaby } from '../ui/hooks';
 import { useNav, Route } from '../ui/nav';
 import { Page, Row, Field, Segmented, useToast, Chip, useConfirm } from '../ui/ui';
-import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, IEdit, IBell, ISparkle } from '../ui/icons';
+import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, IEdit, IBell, ICrown } from '../ui/icons';
 import { BabyAvatar } from './Home';
 import {
   useStore, updateBaby, inviteCaregiver, revokeAccess, setRole, updatePrefs, exportBaby, deleteBabyData, signOut, updateAccount,
@@ -13,9 +13,9 @@ import { syncMode, syncNow, syncStatus, syncDiagnostics } from '../lib/sync';
 import { formatAgo } from '../lib/time';
 import { config } from '../lib/config';
 import type { FeedingPreference } from '../lib/types';
-import { usePlus, PlusBadge, chooseFreeCaregiver } from '../ui/plus';
+import { usePlus, PlusBadge, PlusLink, PlusNote, chooseFreeCaregiver } from '../ui/plus';
 import { BabySwitcher } from '../ui/babies';
-import { memberState, pausedWhenPlusEnds, freeSlotId } from '../lib/plans';
+import { memberState, pausedWhenPlusEnds, freeSlotId, LIMITS } from '../lib/plans';
 
 const PREF_LABEL: Record<FeedingPreference, string> = { breast: 'Breastfed', formula: 'Formula fed', combination: 'Combination fed' };
 
@@ -51,12 +51,12 @@ export function Settings() {
         {!hasBirth && <p className="kv-hint">Add birth weight, length and head circumference to see them as the first point on the growth charts.</p>}
       </button>
       <div className="card list">
-        <Row icon={<ISparkle />} title="Bebig Plus" sub={plus.label} onClick={go({ name: 'plus' })} right={<IChevron />} />
+        <Row icon={<ICrown className="plus-ic" />} title="Bebig Plus" sub={plus.label} onClick={go({ name: 'plus' })} right={<IChevron />} />
       </div>
       <div className="card list">
         <Row icon={<IBottle />} title="Feeding preferences" sub={PREF_LABEL[baby.feeding_preference]} onClick={go({ name: 'feeding-pref' })} right={<IChevron />} />
         <Row icon={<IUsers />} title="Shared access" sub={`${members} member${members === 1 ? '' : 's'}`} onClick={go({ name: 'sharing' })} right={<IChevron />} />
-        <Row icon={<ISliders />} title={plus.can('extras') ? 'Extra trackers' : <>Extra trackers <PlusBadge /></>} sub={extrasSub} onClick={go({ name: 'extras-settings' })} right={<IChevron />} />
+        <Row icon={<ISliders />} title={<>Extra trackers <PlusBadge /></>} sub={extrasSub} onClick={go({ name: 'extras-settings' })} right={<IChevron />} />
         <Row icon={<IChart />} title="Growth charts" onClick={go({ name: 'growth' })} right={<IChevron />} />
         <Row icon={<IExport />} title="Data export & deletion" onClick={go({ name: 'data' })} right={<IChevron />} />
         <Row icon={<ISliders />} title="App preferences" sub={`${prefs.time_format} · ${prefs.units}`} onClick={go({ name: 'prefs' })} right={<IChevron />} />
@@ -162,7 +162,7 @@ export function FeedingPrefPage({ onBack }: { onBack: () => void }) {
 }
 
 export function SharingPage({ onBack }: { onBack: () => void }) {
-  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const plus = usePlus(); const nav = useNav();
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const plus = usePlus();
   const b = ctx!.baby; const isOwner = ctx!.role === 'owner';
   const rows = useStore(s => Object.values(s.access).filter(a => a.baby_id === b.baby_id && a.invitation_status !== 'declined'));
   const users = useStore(s => s.users);
@@ -197,7 +197,7 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
         </span></div>
       )}
       {isOwner && !st.plus && active.some(a => memberState(a, active, st) === 'paused') && (
-        <div className="alert notice"><PlusBadge /><span>Paused caregivers can’t see {b.name}’s records until you get Bebig Plus. Nothing they logged has been deleted. <button className="link" onClick={() => nav.push({ name: 'plus' })}>See Bebig Plus</button></span></div>
+        <div className="alert notice"><PlusBadge /><span>Paused caregivers can’t see {b.name}’s records until you get Bebig Plus. Nothing they logged has been deleted. <PlusLink /></span></div>
       )}
       {pending.length > 0 && <><h2 className="sec-title">Pending invitations</h2><div className="card list">{pending.map(a => (
         <Row key={a.access_id} title={a.invited_email} sub="Waiting for them to sign in and accept" right={isOwner ? <button className="btn soft small" onClick={() => revokeAccess(a.access_id)}>Cancel</button> : null} />
@@ -205,9 +205,10 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
       {isOwner ? (
         <>
           <h2 className="sec-title">Invite a parent or caregiver</h2>
+          <PlusNote>The free plan includes you and one caregiver. More caregivers (up to {LIMITS.plus_caregivers}) are part of Bebig Plus.</PlusNote>
           <Field label="Email address"><input type="email" autoComplete="email" placeholder="partner@example.com" value={email} onChange={e => setEmail(e.target.value)} /></Field>
           {err && <div className="alert error">{err}</div>}
-          {limitHit && <button className="link" onClick={() => nav.push({ name: 'plus' })}><PlusBadge /> See Bebig Plus</button>}
+          {limitHit && <PlusLink />}
           <button className="btn primary block" onClick={invite} disabled={!email}>Send invitation</button>
           <p className="muted small">Caregivers can view, add and edit activity and measurements. Only you (the owner) can manage access or delete the profile. They’ll see the invitation after signing in with this email{syncMode() === 'local' ? ' — in local mode, on this device (try a second browser tab)' : ''}.</p>
         </>

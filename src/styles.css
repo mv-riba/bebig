@@ -4,6 +4,7 @@
   --sage: #6E8E69; --sage-d: #56734F; --sage-l: #E5EDDE; --sage-xl: #F0F4EB;
   --peach: #F3D5BE; --peach-l: #FBEBDF; --peach-d: #C98B62;
   --lav: #D8D1EF; --lav-l: #EFEBF9; --lav-d: #8478C0;
+  --plus: #C29A3D; --plus-d: #80601C; --plus-l: #FAF0D6; --plus-xl: #FDF9EE;
   --red: #B5483F; --red-l: #F8E3DF;
   --r: 20px; --r-sm: 14px; --shadow: 0 2px 10px rgba(70, 55, 110, .07), 0 1px 2px rgba(70, 55, 110, .05);
   --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -322,15 +323,27 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .row-inline select:disabled { opacity: .5; }
 
 /* ---------- Bebig Plus ---------- */
-.plus-badge { display: inline-flex; align-items: center; gap: 3px; background: var(--accent-l); color: var(--accent-d); }
-.plus-lock, .plus-nudge { background: var(--accent-xl); border-color: var(--accent-l); display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.plus-badge { display: inline-flex; align-items: center; gap: 3px; background: var(--plus-l); color: var(--plus-d); }
+.plus-ic { color: var(--plus); flex: none; }
+.row-ic.plus-ic, .plus-page .row-ic { color: var(--plus); }
+.plus-lock, .plus-nudge { background: var(--plus-xl); border-color: var(--plus-l); display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .plus-lock header, .plus-nudge header { display: flex; align-items: center; gap: 8px; } .plus-lock h3, .plus-nudge h3 { flex: 1; }
 .plus-lock .link, .plus-nudge .link { align-self: flex-start; }
+.plus-link { display: inline-flex; align-items: center; gap: 5px; }
+.plus-link svg { color: var(--plus); }
+.plus-note { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; }
+.plus-note .badge { margin-left: 0; flex: none; margin-top: 1px; }
 .plus-nudge { position: relative; padding-right: 40px; }
 .nudge-x { position: absolute; top: 8px; right: 8px; }
-.plus-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; background: var(--accent-xl); border-color: var(--accent-l); padding: 20px 18px; }
+.plus-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; background: var(--plus-xl); border-color: var(--plus-l); padding: 20px 18px; }
 .plus-hero .btn { margin-top: 4px; }
 .plus-page .row-title .badge { margin-left: 6px; }
+.tile { position: relative; }
+.tile-crown { position: absolute; top: 8px; right: 9px; color: var(--plus); }
+.tile-plus { background: var(--plus-xl); border-color: var(--plus-l); } .tile-plus .tile-ic { background: var(--plus-l); color: var(--plus-d); }
+.bubble .tag .badge { text-transform: none; letter-spacing: 0; }
+.kind-plus { background: var(--plus-xl) !important; border: 1px solid var(--plus-l); }
+.kind-plus .link { display: inline-flex; margin-top: 6px; }
 
 /* ---------- Baby switcher ---------- */
 .baby-switch { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--accent-d); padding: 2px 0; }

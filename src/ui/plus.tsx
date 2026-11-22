@@ -1,10 +1,19 @@
 // Bebig Plus UI: plan hook, badge, locked-feature card, trial nudge and the Plus page.
+//
+// One upsell language, used the same way everywhere:
+//  • PlusBadge — the crown "Plus" pill next to the name of every Plus feature, shown whether or not the family has
+//    Plus (during early access and trials too), so it's always clear what will need Plus.
+//  • PlusLock  — replaces a Plus feature on the free plan: what it does, the trial button, and a PlusLink.
+//  • PlusNote  — one line explaining a free-plan limit (e.g. caregivers), with a badge.
+//  • PlusLink  — the only way into the Plus page from a feature: "See what’s in Bebig Plus".
+//  • TrialNudge — the one-off "we've spotted a pattern" trial offer.
+// The crown (ICrown) and the honey colour (--plus) mean Plus; the sparkle means AI and insights.
 // Rules live in lib/plans.ts; the server enforces them when cloud sync is on.
 import React, { useState } from 'react';
 import { useBaby } from './hooks';
 import { useNav } from './nav';
 import { Page, useToast } from './ui';
-import { ISparkle, ICheck, IX } from './icons';
+import { ICrown, ICheck, IX } from './icons';
 import { useStore, getState, setPlusStatus, setFreeCaregiverLocally } from '../lib/store';
 import { resolveStatus, canUse, planLabel, localTrial, caregiverLimit, PLUS_FEATURES, ALWAYS_FREE, LIMITS, PRICE_LINE, type Feature, type PlusStatus } from '../lib/plans';
 import { config } from '../lib/config';
@@ -53,13 +62,24 @@ export function PausedBanner() {
   if (!paused.length) return null;
   return <>{paused.map(p => (
     <div key={p.baby_id} className="alert notice" role="status">
-      <ISparkle size={20} />
+      <ICrown size={20} className="plus-ic" />
       <span>Your access to <strong>{p.name}</strong> is paused because the family’s Bebig Plus has ended. Nothing has been deleted — it comes back as soon as {p.owner_name ?? 'the profile owner'} renews Plus or chooses you as the caregiver on the free plan.</span>
     </div>
   ))}</>;
 }
 
-export function PlusBadge() { return <span className="badge plus-badge"><ISparkle size={11} /> Plus</span>; }
+export function PlusBadge() { return <span className="badge plus-badge"><ICrown size={11} /> Plus</span>; }
+
+/** The one link into the Plus page. */
+export function PlusLink({ label = 'See what’s in Bebig Plus', onClick }: { label?: string; onClick?: () => void }) {
+  const nav = useNav();
+  return <button className="link plus-link" onClick={() => { onClick?.(); nav.push({ name: 'plus' }); }}><ICrown size={15} /> {label}</button>;
+}
+
+/** A free-plan limit explained in one line. */
+export function PlusNote({ children, link = false }: { children: React.ReactNode; link?: boolean }) {
+  return <div className="plus-note muted small"><PlusBadge /><span>{children}{link && <> <PlusLink /></>}</span></div>;
+}
 
 function TrialButton({ className = 'btn primary block' }: { className?: string }) {
   const ctx = useBaby(); const toast = useToast(); const [busy, setBusy] = useState(false);
@@ -75,24 +95,24 @@ function TrialButton({ className = 'btn primary block' }: { className?: string }
 
 /** Shown in place of a Plus feature on the free plan. */
 export function PlusLock({ title, text }: { title: string; text: string }) {
-  const plus = usePlus(); const nav = useNav();
+  const plus = usePlus();
   if (!plus) return null;
   const left = Math.max(0, LIMITS.trial_min_logged_days - plus.status.logged_days);
   return (
     <div className="card plus-lock">
-      <header><ISparkle className="spark" /><h3>{title}</h3><PlusBadge /></header>
+      <header><ICrown className="plus-ic" /><h3>{title}</h3><PlusBadge /></header>
       <p>{text}</p>
       {plus.status.trial_eligible ? <TrialButton />
         : !plus.status.trial_used && left > 0 ? <p className="muted small">Your free trial unlocks after {left} more day{left === 1 ? '' : 's'} of logging, when there’s enough data for predictions to be useful.</p>
           : null}
-      <button className="link" onClick={() => nav.push({ name: 'plus' })}>What’s in Bebig Plus</button>
+      <PlusLink />
     </div>
   );
 }
 
 /** The "we've spotted a pattern" moment: offered once there are enough logged days. Dismissable per baby. */
 export function TrialNudge() {
-  const ctx = useBaby(); const plus = usePlus(); const nav = useNav();
+  const ctx = useBaby(); const plus = usePlus();
   const key = ctx ? `bebig:trial-nudge:${ctx.baby.baby_id}` : '';
   const [hidden, setHidden] = useState(() => { try { return !!key && localStorage.getItem(key) === '1'; } catch { return false; } });
   if (!ctx || !plus || hidden || plus.status.plus || !plus.status.trial_eligible) return null;
@@ -100,10 +120,10 @@ export function TrialNudge() {
   return (
     <div className="card plus-nudge" role="status">
       <button className="icon-btn nudge-x" aria-label="Not now" onClick={close}><IX size={18} /></button>
-      <header><ISparkle className="spark" /><h3>We’re starting to see {ctx.baby.name.split(' ')[0]}’s rhythm</h3></header>
+      <header><ICrown className="plus-ic" /><h3>We’re starting to see {ctx.baby.name.split(' ')[0]}’s rhythm</h3></header>
       <p>After {plus.status.logged_days} days of logging there’s enough data for predictions. Try Bebig Plus free for {LIMITS.trial_days} days — no payment details needed.</p>
       <TrialButton />
-      <button className="link" onClick={() => nav.push({ name: 'plus' })}>What’s included</button>
+      <PlusLink />
     </div>
   );
 }
@@ -115,7 +135,7 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
   return (
     <Page title="Bebig Plus" onBack={onBack} className="plus-page">
       <div className="card plus-hero">
-        <ISparkle size={30} className="spark" />
+        <ICrown size={30} className="plus-ic" />
         <h2>{plus.label}</h2>
         {st.early_access ? <p>Thank you for being an early Bebig family. Every Plus feature is free for you during early access. Afterwards, the free plan includes you and one caregiver; anyone else is paused until you get Plus.</p>
           : st.source === 'trial' ? <p>You’re trying every Plus feature. When the trial ends, everything you logged stays — only the Plus extras switch off, and extra caregivers are paused (not removed).</p>
@@ -127,10 +147,11 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
         {(st.early_access || st.source === 'trial') && <p className="muted small">{st.early_access ? 'After early access' : 'After the trial'}, Bebig Plus is {PRICE_LINE}. Nothing is charged unless you choose a plan.</p>}
         {!st.plus && !st.trial_used && <p className="muted small">Bebig Plus is {PRICE_LINE}, for the whole family.</p>}
       </div>
-      <h2 className="sec-title">Plus</h2>
+      <h2 className="sec-title">Bebig Plus <PlusBadge /></h2>
+      <p className="muted small">Look for the <PlusBadge /> badge in the app — it marks these features.</p>
       <div className="card list">
         {PLUS_FEATURES.map(f => (
-          <div key={f.id} className="row"><span className="row-ic"><ISparkle /></span>
+          <div key={f.id} className="row"><span className="row-ic"><ICrown /></span>
             <span className="row-main"><span className="row-title">{f.title}{f.soon && <span className="badge">Coming soon</span>}</span><span className="row-sub">{f.text}</span></span></div>
         ))}
       </div>
