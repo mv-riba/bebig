@@ -147,7 +147,7 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
         {(st.early_access || st.source === 'trial') && <p className="muted small">{st.early_access ? 'After early access' : 'After the trial'}, Bebig Plus is {PRICE_LINE}. Nothing is charged unless you choose a plan.</p>}
         {!st.plus && !st.trial_used && <p className="muted small">Bebig Plus is {PRICE_LINE}, for the whole family.</p>}
       </div>
-      <h2 className="sec-title">Bebig Plus <PlusBadge /></h2>
+      <h2 className="sec-title">Bebig Plus</h2>
       <p className="muted small">Look for the <PlusBadge /> badge in the app — it marks these features.</p>
       <div className="card list">
         {PLUS_FEATURES.map(f => (
