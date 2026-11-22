@@ -100,11 +100,10 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
         <div className="card timer-card">
           {!timer ? (
             <>
-              <p className="muted small">Start a timer on a side, or enter the feed manually below (you can still choose left, right or both).</p>
+              <p className="muted small">Start a timer on the left or right side, or enter the feed manually below (you can still choose left, right or both).</p>
               <div className="btn-row">
                 <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'left')}><IPlay size={16} /> Left</button>
                 <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'right')}><IPlay size={16} /> Right</button>
-                <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, null)}><IPlay size={16} /> Timer</button>
               </div>
             </>
           ) : (
