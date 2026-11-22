@@ -136,6 +136,7 @@ export interface RemoteAuth {
   signOut(): Promise<void>;
   deleteAccount(): Promise<void>;
   updateName(name: string): Promise<void>;
+  leaveBaby(baby_id: string): Promise<void>;
   onSignedIn(): void;
 }
 let remote: RemoteAuth | null = null;
@@ -302,13 +303,52 @@ export function deleteBabyData(baby_id: string) {
     }
     Object.values(s.access).forEach(a => { if (a.baby_id === baby_id) delete s.access[a.access_id]; });
     delete s.feedTimers[baby_id]; delete s.babies[baby_id]; delete s.plus[baby_id];
+    for (const [k, et] of Object.entries(s.extraTimers)) if (et.baby_id === baby_id) delete s.extraTimers[k];
     Object.keys(s.chats).forEach(k => { if (k.endsWith(':' + baby_id)) delete s.chats[k]; });
+    // changes still waiting for this baby would only be refused after the delete (and retried forever)
+    s.outbox = s.outbox.filter(o => o.row.baby_id !== baby_id);
+    s.syncFailed = (s.syncFailed || []).filter(o => o.row.baby_id !== baby_id);
     queue(s, 'babies', { baby_id, deleted_at: nowIso() });
     s.audit.push({ at: nowIso(), user_id: uid, action: 'baby.deleted', detail: baby_id });
   });
 }
 
+/** Remove this device's copy of a baby the signed-in user can no longer see (left, revoked, paused or deleted).
+ *  Used after leaving and by the sync pull. Other people's data on the server is untouched. */
+export function forgetBabyLocally(s: State, baby_id: string, me: string | null) {
+  delete s.babies[baby_id]; delete s.plus[baby_id]; delete s.feedTimers[baby_id];
+  for (const t of ['feeds', 'poos', 'sleeps', 'growth', 'trackers', 'extras'] as const) for (const [k, v] of Object.entries(s[t] as any)) if ((v as any).baby_id === baby_id) delete (s[t] as any)[k];
+  for (const [k, et] of Object.entries(s.extraTimers)) if (et.baby_id === baby_id) delete s.extraTimers[k];
+  for (const a of Object.values(s.access)) if (a.baby_id === baby_id && a.user_id === me) delete s.access[a.access_id];
+  for (const [u, b] of Object.entries(s.selectedBaby)) if (b === baby_id) delete s.selectedBaby[u];
+}
+
 // ---------------- Sharing ----------------
+
+/** A caregiver ends their own access. What they logged stays with the baby. */
+export async function leaveBaby(baby_id: string) {
+  const uid = currentUserId(); if (!uid) return;
+  if (roleFor(baby_id) !== 'caregiver') throw new Error('Only caregivers can leave a profile. The owner can delete it instead.');
+  if (remote) {
+    await remote.leaveBaby(baby_id); // server first: if it fails, nothing changes on this device
+    setState(s => {
+      s.outbox = s.outbox.filter(o => o.row.baby_id !== baby_id);
+      s.syncFailed = (s.syncFailed || []).filter(o => o.row.baby_id !== baby_id);
+      forgetBabyLocally(s, baby_id, uid);
+      s.audit.push({ at: nowIso(), user_id: uid, action: 'access.left', detail: baby_id });
+    });
+    return;
+  }
+  // local mode: other people on this device still use the records, so only the membership ends
+  setState(s => {
+    const a = Object.values(s.access).find(x => x.baby_id === baby_id && x.user_id === uid && x.invitation_status === 'accepted');
+    if (!a) return;
+    a.invitation_status = 'revoked'; a.updated_at = nowIso();
+    if (a.keeps_free_access) { a.keeps_free_access = false; refillFreeSlot(s, baby_id); }
+    if (s.selectedBaby[uid] === baby_id) delete s.selectedBaby[uid];
+    s.audit.push({ at: nowIso(), user_id: uid, action: 'access.left', detail: baby_id });
+  });
+}
 
 export class PlanLimitError extends Error { readonly planLimit = true; }
 
@@ -403,7 +443,10 @@ export function deleteEntry(table: Kind, id: string) {
   });
 }
 export function restoreEntry(table: Kind, id: string) {
-  setState(s => { const x = (s[table] as any)[id]; if (x) { x.deleted_at = null; x.updated_at = nowIso(); queue(s, table, x); } });
+  const row = (state[table] as any)[id]; if (!row) return;
+  assertAccess(row.baby_id);
+  // updated_by must be the person restoring it: the server refuses changes attributed to someone else
+  setState(s => { const x = (s[table] as any)[id]; if (x) { x.deleted_at = null; x.updated_at = nowIso(); x.updated_by = currentUserId(); queue(s, table, x); } });
 }
 
 export const live = <T extends { deleted_at?: string | null; baby_id: string }>(rec: Record<string, T>, baby_id: string) =>
@@ -500,7 +543,20 @@ export function resetAll() { localStorage.removeItem(KEY); sessionStorage.remove
 
 /** Move changes the server rejected back into the outbox (e.g. after a server-side fix). */
 export function retryFailedSync() {
-  setState(s => { s.outbox = [...(s.syncFailed || []).map(({ error, failed_at, ...op }) => op), ...s.outbox]; s.syncFailed = []; }, false);
+  setState(s => {
+    // Retry with the row as it is now on this device, once per row, and skip rows that already have a newer change
+    // waiting: replaying the old copy would overwrite later edits on the server (upserts are last-push-wins).
+    const ID: Record<Table, string> = { babies: 'baby_id', access: 'access_id', feeds: 'feed_id', poos: 'poo_id', sleeps: 'sleep_id', growth: 'measurement_id', trackers: 'tracker_id', extras: 'extra_id' };
+    const key = (o: OutboxOp) => `${o.table}:${o.row[ID[o.table]]}`;
+    const waiting = new Set(s.outbox.map(key));
+    const retry: OutboxOp[] = [];
+    for (const { error, failed_at, ...op } of (s.syncFailed || []).slice().reverse()) {
+      const k = key(op); if (waiting.has(k)) continue; waiting.add(k);
+      const current = (s[op.table] as Record<string, any>)[op.row[ID[op.table]]];
+      retry.unshift(current && !(op.table === 'babies' && op.row.deleted_at) ? { ...op, row: structuredClone(current) } : op);
+    }
+    s.outbox = [...retry, ...s.outbox]; s.syncFailed = []; orderOutbox(s);
+  }, false);
 }
 
 // Whether the first server pull after sign-in has finished (not persisted). Until then a signed-in user with no
@@ -536,6 +592,7 @@ export function discardExtraTimer(tracker_id: string) { setState(s => { delete s
 export function stopExtraTimer(tracker_id: string, notes: string | null = null) {
   const t = state.extraTimers[tracker_id]; if (!t) return null;
   const secs = Math.max(1, Math.round(extraTimerSeconds(t)));
+  if (secs > 24 * 3600) throw new Error('This timer ran for more than 24 hours. Discard it and enter the time manually.');
   const id = upsertEntry('extras', { baby_id: t.baby_id, tracker_id, datetime: t.started_at, duration_seconds: secs, value_num: null, level: null, notes });
   discardExtraTimer(tracker_id);
   return { id, secs };

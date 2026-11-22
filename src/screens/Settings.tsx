@@ -6,7 +6,7 @@ import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, 
 import { BabyAvatar } from './Home';
 import {
   useStore, updateBaby, inviteCaregiver, revokeAccess, setRole, updatePrefs, exportBaby, deleteBabyData, signOut, updateAccount,
-  deleteAccount, currentUserId, accessibleBabies, selectBaby, unsyncedCount,
+  deleteAccount, currentUserId, accessibleBabies, selectBaby, unsyncedCount, leaveBaby,
 } from '../lib/store';
 import { formatDateKey, describeAge, daysBetween, todayKey, listTimezones } from '../lib/time';
 import { syncMode, syncNow, syncStatus, syncDiagnostics } from '../lib/sync';
@@ -16,6 +16,7 @@ import type { FeedingPreference } from '../lib/types';
 import { usePlus, PlusBadge, PlusLink, PlusNote, chooseFreeCaregiver } from '../ui/plus';
 import { BabySwitcher } from '../ui/babies';
 import { memberState, pausedWhenPlusEnds, freeSlotId, LIMITS } from '../lib/plans';
+import { checkBirthDetails, csvSafe } from '../lib/validate';
 
 const PREF_LABEL: Record<FeedingPreference, string> = { breast: 'Breastfed', formula: 'Formula fed', combination: 'Combination fed' };
 
@@ -78,23 +79,16 @@ export function ProfileEdit({ onBack }: { onBack: () => void }) {
     bw: b.birth_weight_grams ? (b.birth_weight_grams / 1000).toString() : '', bl: b.birth_length_mm ? (b.birth_length_mm / 10).toString() : '', bh: b.birth_head_circumference_mm ? (b.birth_head_circumference_mm / 10).toString() : '' });
   const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: any) => setF({ ...f, [k]: e.target.value });
-  const num = (v: string) => v.trim() === '' ? null : Number(v.replace(',', '.'));
   const onPhoto = (file?: File) => { if (!file) return; resizeImage(file).then(url => { updateBaby(b.baby_id, { photograph_url: url }); toast('Photo updated'); }); };
   const save = async () => {
     setErr(null);
     if (!f.name.trim()) return setErr('Please enter a name.');
     if (!f.date_of_birth || f.date_of_birth > todayKey(f.timezone)) return setErr('Please enter a valid date of birth.');
-    const gw = num(f.ga_w), gd = num(f.ga_d);
-    if (gw != null && (gw < 22 || gw > 44)) return setErr('Gestational age weeks should be between 22 and 44.');
-    if (gd != null && (gd < 0 || gd > 6)) return setErr('Gestational age days should be 0–6.');
-    const bw = num(f.bw), bl = num(f.bl), bh = num(f.bh);
-    if (bw != null && (bw < 0.3 || bw > 7)) return setErr('Birth weight should be in kg (e.g. 3.4).');
-    if (bl != null && (bl < 25 || bl > 65)) return setErr('Birth length should be in cm (e.g. 50).');
-    if (bh != null && (bh < 20 || bh > 45)) return setErr('Head circumference should be in cm (e.g. 34).');
+    if (f.name.trim().length > 80) return setErr('Please keep the name under 80 characters.');
+    const birth = checkBirthDetails(f);
+    if (!birth.ok) return setErr(birth.error);
     if (f.timezone !== b.timezone && !(await confirm({ title: 'Change time zone?', text: 'All times and daily totals will be shown in the new zone. Recorded moments stay the same.', ok: 'Change' }))) return;
-    updateBaby(b.baby_id, { name: f.name.trim(), date_of_birth: f.date_of_birth, time_of_birth: f.time_of_birth || null, sex: f.sex, timezone: f.timezone,
-      gestational_age_weeks: gw, gestational_age_days: gw != null ? gd ?? 0 : null, birth_weight_grams: bw != null ? Math.round(bw * 1000) : null,
-      birth_length_mm: bl != null ? Math.round(bl * 10) : null, birth_head_circumference_mm: bh != null ? Math.round(bh * 10) : null });
+    updateBaby(b.baby_id, { name: f.name.trim(), date_of_birth: f.date_of_birth, time_of_birth: f.time_of_birth || null, sex: f.sex, timezone: f.timezone, ...birth.value });
     toast('Profile saved'); onBack();
   };
   return (
@@ -170,7 +164,7 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
   const invite = () => { setErr(null); setLimitHit(false); try { inviteCaregiver(b.baby_id, email, 'caregiver', plus?.caregivers); setEmail(''); toast('Invitation created'); } catch (e: any) { setErr(e.message); setLimitHit(!!e.planLimit); } };
   const active = rows.filter(r => r.invitation_status === 'accepted'), pending = rows.filter(r => r.invitation_status === 'pending'), revoked = rows.filter(r => r.invitation_status === 'revoked');
   if (!plus) return null;
-  const nameOf = (a: typeof rows[number]) => users[a.user_id!]?.display_name ?? a.invited_email;
+  const nameOf = (a: typeof rows[number]) => (a.user_id && users[a.user_id]?.display_name) || a.invited_email || '?'; // an empty name must not crash the page
   const STATE_LABEL = { owner: 'Owner', free: 'Caregiver', plus: 'Caregiver · with Plus', paused: 'Paused — needs Bebig Plus', pending: 'Invited' };
   const st = plus.status;
   const temporary = st.plus && (st.early_access || st.source === 'trial' || st.status === 'cancelled');
@@ -212,7 +206,13 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
           <button className="btn primary block" onClick={invite} disabled={!email}>Send invitation</button>
           <p className="muted small">Caregivers can view, add and edit activity and measurements. Only you (the owner) can manage access or delete the profile. They’ll see the invitation after signing in with this email{syncMode() === 'local' ? ' — in local mode, on this device (try a second browser tab)' : ''}.</p>
         </>
-      ) : <p className="muted small">Only the profile owner can invite or remove people.</p>}
+      ) : <>
+        <p className="muted small">Only the profile owner can invite or remove people.</p>
+        <button className="btn soft block danger" onClick={async () => {
+          if (!(await confirm({ title: `Leave ${b.name}’s profile?`, text: 'You’ll no longer see or add records. Everything you logged stays with the profile. To come back, the owner needs to invite you again.', ok: 'Leave', danger: true }))) return;
+          try { await leaveBaby(b.baby_id); toast(`You’ve left ${b.name}’s profile`); onBack(); } catch (e: any) { toast(e.message); }
+        }}>Leave this profile</button>
+      </>}
       {revoked.length > 0 && <p className="muted tiny">Previously removed: {revoked.map(r => r.invited_email).join(', ')}</p>}
     </Page>
   );
@@ -251,7 +251,17 @@ export function PrefsPage({ onBack }: { onBack: () => void }) {
 function download(name: string, text: string, type: string) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-const csv = (rows: any[]) => { if (!rows.length) return ''; const keys = Object.keys(rows[0]); const esc = (v: any) => v == null ? '' : /[",\n]/.test(String(typeof v === 'object' ? JSON.stringify(v) : v)) ? `"${String(typeof v === 'object' ? JSON.stringify(v) : v).replace(/"/g, '""')}"` : String(v); return [keys.join(','), ...rows.map(r => keys.map(k => esc(r[k])).join(','))].join('\n'); };
+// Notes are free text written by any caregiver: cells that look like spreadsheet formulas are exported as text.
+const csv = (rows: any[]) => {
+  if (!rows.length) return '';
+  const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+  const esc = (v: any) => {
+    if (v == null) return '';
+    const s = typeof v === 'object' ? JSON.stringify(v) : typeof v === 'string' ? csvSafe(v) : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [keys.join(','), ...rows.map(r => keys.map(k => esc(r[k])).join(','))].join('\n');
+};
 
 export function DataPage({ onBack }: { onBack: () => void }) {
   const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const b = ctx!.baby;
@@ -270,7 +280,7 @@ export function DataPage({ onBack }: { onBack: () => void }) {
           <p className="muted small">Permanently deletes {b.name}’s profile and all records for every member. This can’t be undone — export first if you want a copy.</p>
           <button className="btn danger block" onClick={async () => { if (await confirm({ title: `Delete all of ${b.name}’s data?`, text: 'This permanently removes the profile and every record for all members.', ok: 'Delete everything', danger: true, typeWord: 'DELETE' })) { deleteBabyData(b.baby_id); toast('All data deleted'); } }}><ITrash size={16} /> Delete all baby data</button>
         </>
-      ) : <p className="muted small">Only the profile owner can delete the baby’s data. You can ask them, or leave the profile from Shared access.</p>}
+      ) : <p className="muted small">Only the profile owner can delete the baby’s data. You can ask them, or leave the profile from Settings → Shared access.</p>}
     </Page>
   );
 }
@@ -310,10 +320,10 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
   if (!me) return null;
   return (
     <Page title="Account" onBack={onBack}>
-      <Field label="Your name"><input value={name} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() && name !== me.display_name) { updateAccount({ display_name: name.trim() }); toast('Name updated'); } }} /></Field>
+      <Field label="Your name"><input value={name} maxLength={80} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() && name !== me.display_name) { updateAccount({ display_name: name.trim() }); toast('Name updated'); } }} /></Field>
       <Field label="Email"><input value={me.email} disabled /></Field>
       <button className="btn soft block" onClick={async () => { const n = unsyncedCount(); if (!n || await confirm({ title: 'Sign out?', text: `${n} change${n > 1 ? 's haven’t' : ' hasn’t'} synced yet and would be lost. Try Settings → Sync now first.`, ok: 'Sign out anyway', danger: true })) signOut(); }}>Sign out</button>
-      <button className="btn danger block" onClick={async () => { if (await confirm({ title: 'Delete your account?', text: 'Baby profiles you own will also be deleted for everyone.', ok: 'Delete account', danger: true, typeWord: 'DELETE' })) await deleteAccount(); }}>Delete account</button>
+      <button className="btn danger block" onClick={async () => { if (await confirm({ title: 'Delete your account?', text: 'Baby profiles you own will also be deleted for everyone.', ok: 'Delete account', danger: true, typeWord: 'DELETE' })) { try { await deleteAccount(); } catch (e: any) { toast(e.message || 'Couldn’t delete the account. Check your connection and try again.'); } } }}>Delete account</button>
     </Page>
   );
 }

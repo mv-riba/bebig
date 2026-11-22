@@ -121,10 +121,13 @@ export function toLocalInput(iso: string | Date, tz: string) {
   return `${p.y}-${pad(p.m)}-${pad(p.d)}T${pad(p.h)}:${pad(p.mi)}`;
 }
 export function fromLocalInput(v: string, tz: string): string {
-  const [date, time = '00:00'] = v.split('T');
+  const [date = '', time = '00:00'] = (v || '').split('T');
   const { y, m, d } = parseKey(date);
   const [h, mi] = time.split(':').map(Number);
-  return zonedToUtc(y, m, d, h, mi, tz).toISOString();
+  const t = [y, m, d, h, mi].every(Number.isFinite) ? zonedToUtc(y, m, d, h, mi, tz) : null;
+  // a cleared date/time field: a readable message instead of "Invalid time value"
+  if (!t || isNaN(t.getTime())) throw new Error('Please enter a valid date and time.');
+  return t.toISOString();
 }
 
 /** Seconds of [start,end) that fall inside [a,b). */

@@ -36,7 +36,8 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
 
   const saveManual = async () => {
     setErr(null);
-    const s = fromLocalInput(start, tz), e = fromLocalInput(end, tz);
+    let s: string, e: string;
+    try { s = fromLocalInput(start, tz); e = fromLocalInput(end, tz); } catch (x: any) { return setErr(x.message); }
     if (new Date(e) <= new Date(s)) return setErr('End time must be after the start time.');
     if (new Date(e).getTime() > Date.now() + 5 * 60000) return setErr('End time can’t be in the future. Use the timer for an ongoing sleep.');
     if (new Date(e).getTime() - new Date(s).getTime() > 16 * 3600000) return setErr('That’s longer than 16 hours — please check the times.');

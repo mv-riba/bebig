@@ -7,6 +7,7 @@ import { guessTimezone, todayKey } from '../lib/time';
 import { TzSelect, resizeImage } from './Settings';
 import { syncMode } from '../lib/sync';
 import type { FeedingPreference, Sex } from '../lib/types';
+import { checkBirthDetails } from '../lib/validate';
 
 export function Logo({ size = 44 }: { size?: number }) {
   return (
@@ -85,18 +86,18 @@ export function Onboarding({ onDone }: { onDone?: () => void } = {}) {
   const [f, setF] = useState({ name: '', dob: '', tob: '', sex: '' as Sex | '', tz: tz0, pref: 'breast' as FeedingPreference, gaw: '', gad: '', bw: '', bl: '', bh: '' });
   const [photo, setPhoto] = useState<string | null>(null); const [more, setMore] = useState(false); const [err, setErr] = useState<string | null>(null);
   const set = (k: keyof typeof f) => (e: any) => setF({ ...f, [k]: e.target.value });
-  const num = (v: string) => v.trim() === '' ? null : Number(v.replace(',', '.'));
   const save = () => {
     setErr(null);
     if (!f.name.trim()) return setErr('Please enter your baby’s name.');
     if (!f.dob || f.dob > todayKey(f.tz)) return setErr('Please enter a valid date of birth.');
     if (!f.sex) return setErr('Please choose the sex used for growth references.');
-    const gw = num(f.gaw); if (gw != null && (gw < 22 || gw > 44)) return setErr('Gestational age weeks should be between 22 and 44.');
-    const bw = num(f.bw), bl = num(f.bl), bh = num(f.bh);
-    if (bw != null && (bw < 0.3 || bw > 7)) return setErr('Birth weight should be in kg, e.g. 3.4');
-    createBaby({ name: f.name.trim(), date_of_birth: f.dob, time_of_birth: f.tob || null, sex: f.sex, timezone: f.tz, feeding_preference: f.pref, photograph_url: photo,
-      gestational_age_weeks: gw, gestational_age_days: gw != null ? num(f.gad) ?? 0 : null,
-      birth_weight_grams: bw != null ? Math.round(bw * 1000) : null, birth_length_mm: bl != null ? Math.round(bl * 10) : null, birth_head_circumference_mm: bh != null ? Math.round(bh * 10) : null });
+    if (f.name.trim().length > 80) return setErr('Please keep the name under 80 characters.');
+    // same limits as the database, so the profile can't get stuck unsynced
+    const birth = checkBirthDetails({ ga_w: f.gaw, ga_d: f.gad, bw: f.bw, bl: f.bl, bh: f.bh });
+    if (!birth.ok) return setErr(birth.error);
+    try {
+      createBaby({ name: f.name.trim(), date_of_birth: f.dob, time_of_birth: f.tob || null, sex: f.sex, timezone: f.tz, feeding_preference: f.pref, photograph_url: photo, ...birth.value });
+    } catch (e: any) { return setErr(e.message); }
     onDone?.();
   };
   return (

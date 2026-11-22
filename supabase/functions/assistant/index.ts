@@ -9,6 +9,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'; // pinned: a new upstream release can't change this function silently
 
 const ALLOWED_ORIGINS = ['https://bebig.app', 'http://localhost:5173'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const SYSTEM = `You rephrase answers for Bebig, a newborn routine-tracking app.
 Rules: Use ONLY the facts in VERIFIED_ANSWER. Do not add, change or estimate any number, time or date.
@@ -24,23 +25,27 @@ Deno.serve(async req => {
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } });
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return new Response('Unauthorized', { status: 401, headers: cors });
-  const { baby_id, question, verified_answer, kind } = await req.json();
-  // membership check through RLS: the select only succeeds for authorised members
-  const { data: baby } = await supabase.from('baby_profiles').select('baby_id').eq('baby_id', baby_id).maybeSingle();
-  if (!baby) return new Response('Forbidden', { status: 403, headers: cors });
+  let body: any;
+  try { body = await req.json(); } catch { return new Response('Bad request', { status: 400, headers: cors }); }
+  const { baby_id, question, verified_answer, kind } = body ?? {};
+  if (typeof baby_id !== 'string' || !UUID.test(baby_id) || typeof question !== 'string' || typeof verified_answer !== 'string')
+    return new Response('Bad request', { status: 400, headers: cors });
+  // membership check: is_member() also covers paused caregivers (baby_profiles' select would let a creator through)
+  const { data: member } = await supabase.rpc('is_member', { b: baby_id });
+  if (member !== true) return new Response('Forbidden', { status: 403, headers: cors });
   if (kind === 'safety') return Response.json({ content: verified_answer }, { headers: cors }); // safety copy is never rephrased
-  if (typeof question !== 'string' || typeof verified_answer !== 'string') return new Response('Bad request', { status: 400, headers: cors });
   // server-side consent + Plus plan + daily quota (counts this request)
   const { data: allowed } = await supabase.rpc('use_ai_quota', { b: baby_id });
   if (allowed !== true) return Response.json({ content: verified_answer }, { headers: cors });
 
   const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
+    method: 'POST', signal: AbortSignal.timeout(7000), // the app gives up after 8 s and shows the verified answer
     headers: { 'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model: 'claude-haiku-5-5', max_tokens: 300, system: SYSTEM,
-      messages: [{ role: 'user', content: `QUESTION: ${String(question).slice(0, 500)}\nVERIFIED_ANSWER: ${String(verified_answer).slice(0, 2000)}` }] }),
-  });
-  if (!r.ok) return Response.json({ content: verified_answer }, { headers: cors }); // fall back to the verified answer
-  const j = await r.json();
-  return Response.json({ content: j.content?.[0]?.text ?? verified_answer }, { headers: cors });
+      messages: [{ role: 'user', content: `QUESTION: ${question.slice(0, 500)}\nVERIFIED_ANSWER: ${verified_answer.slice(0, 2000)}` }] }),
+  }).catch(() => null);
+  if (!r?.ok) return Response.json({ content: verified_answer }, { headers: cors }); // fall back to the verified answer
+  const j = await r.json().catch(() => null);
+  const text = j?.content?.[0]?.text;
+  return Response.json({ content: typeof text === 'string' && text.trim() ? text : verified_answer }, { headers: cors });
 });
