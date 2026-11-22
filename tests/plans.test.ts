@@ -75,3 +75,12 @@ test('caregivers: owner + one free slot always in; others need Plus and are paus
   assert.equal(freeSlotId(chosen), 'gran');
   assert.deepEqual(chosen.map(r => memberState(r, chosen, free)), ['owner', 'paused', 'free']);
 });
+
+test('extra trackers are Plus; core logging (incl. wet nappies) and history stay free', () => {
+  const free = resolveStatus(data(1), undefined, NOW, '2027-04-01T00:00:00Z');
+  const ea = resolveStatus(data(1), undefined, NOW, '2027-05-31T21:00:00Z');
+  assert.equal(canUse('extras', free), false); assert.equal(canUse('extras', ea), true);
+  assert.ok(plans.PLUS_FEATURES.some(f => f.id === 'extras'));
+  assert.match(plans.ALWAYS_FREE[0], /^Core logging: .*wet/);
+  assert.ok(plans.ALWAYS_FREE.some(t => /history.*extras/.test(t)));
+});
