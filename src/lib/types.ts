@@ -31,7 +31,7 @@ export interface BabyProfile {
   birth_weight_grams?: number | null;
   birth_length_mm?: number | null;
   birth_head_circumference_mm?: number | null;
-  created_by: ID;
+  created_by: ID | null; // null once that person deleted their account
   created_at: string;
   updated_at: string;
 }
@@ -43,15 +43,15 @@ export interface BabyAccess {
   invited_email: string;
   role: Role;
   invitation_status: InvitationStatus;
-  invited_by: ID;
+  invited_by: ID | null;
   created_at: string;
   updated_at: string;
 }
 
 interface Audited {
   baby_id: ID;
-  created_by: ID;
-  updated_by: ID;
+  created_by: ID | null; // null once that person deleted their account
+  updated_by: ID | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null; // soft delete for sync & audit
@@ -117,7 +117,7 @@ export interface FeedTimer {
   right_seconds: number;
   unsided_seconds: number;
   segment_started_at: string | null; // null when paused
-  created_by: ID;
+  created_by: ID | null; // null once that person deleted their account
 }
 
 export interface UserPrefs {

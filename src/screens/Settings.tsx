@@ -248,7 +248,14 @@ export function DataPage({ onBack }: { onBack: () => void }) {
 }
 
 export function PrivacyPage({ onBack }: { onBack: () => void }) {
-  const ctx = useBaby(); const p = ctx!.prefs;
+  const ctx = useBaby(); const p = ctx!.prefs; const toast = useToast();
+  // consent is also recorded on the server, which checks it before any text is sent to the AI model
+  const onAiConsent = async (on: boolean) => {
+    updatePrefs({ ai_consent: on });
+    if (syncMode() !== 'remote') return;
+    try { const { setAiConsent } = await import('../lib/supabase'); await setAiConsent(on); }
+    catch { updatePrefs({ ai_consent: !on }); toast('Couldn’t save that setting — check your connection and try again'); }
+  };
   return (
     <Page title="Privacy" onBack={onBack}>
       <div className="prose">
@@ -264,7 +271,7 @@ export function PrivacyPage({ onBack }: { onBack: () => void }) {
         <p className="muted small">{syncMode() === 'local' ? 'You’re in local mode: everything stays in this browser on this device. Clearing browser data removes it.' : 'Cloud sync is on.'}</p>
         <p className="muted small">The full privacy policy, lawful basis and retention periods will be published before public release (GDPR review pending).</p>
       </div>
-      <label className="row card"><span className="row-main"><span className="row-title">Allow AI phrasing by our server-side model</span><span className="row-sub">Numbers are always calculated from your records. Off by default.</span></span><input type="checkbox" className="switch" checked={p.ai_consent} onChange={e => updatePrefs({ ai_consent: e.target.checked })} /></label>
+      <label className="row card"><span className="row-main"><span className="row-title">Allow AI phrasing by our server-side model</span><span className="row-sub">Numbers are always calculated from your records. Off by default.</span></span><input type="checkbox" className="switch" checked={p.ai_consent} onChange={e => onAiConsent(e.target.checked)} /></label>
     </Page>
   );
 }

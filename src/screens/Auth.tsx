@@ -71,7 +71,7 @@ export function InvitesBanner() {
     <div className="invites">
       {invites.map(i => (
         <div key={i.access_id} className="card invite">
-          <p><strong>{users[i.invited_by]?.display_name ?? 'Someone'}</strong> invited you to {babies[i.baby_id]?.name ?? 'a baby'}’s profile as a {i.role}.</p>
+          <p><strong>{(i.invited_by && users[i.invited_by]?.display_name) || 'Someone'}</strong> invited you to {babies[i.baby_id]?.name ?? 'a baby'}’s profile as a {i.role}.</p>
           <div className="btn-row"><button className="btn soft small" onClick={() => respondToInvite(i.access_id, false)}>Decline</button><button className="btn primary small" onClick={() => respondToInvite(i.access_id, true)}>Accept</button></div>
         </div>
       ))}

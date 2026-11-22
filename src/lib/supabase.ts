@@ -4,7 +4,7 @@
 // - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, type Table } from './store';
+import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, type Table } from './store';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -20,6 +20,13 @@ async function gotrue(path: string, body: any) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Authentication failed');
   return j;
+}
+// Links (email confirmation, password reset) can carry a session. A link someone else sent could carry *their*
+// session, so the app never switches to an account from a link without the user confirming which account it is.
+function confirmAccountFromLink(user: { id: string; email: string }): boolean {
+  if (auth && auth.user.id === user.id) return true;
+  const current = auth ? `\n\nYou'll be signed out of ${auth.user.email} on this device.` : '';
+  return confirm(`Continue in Bebig as ${user.email}?${current}\n\nOnly continue if this is your email address.`);
 }
 function toSession(j: any): AuthSession { return { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in ?? 3600) * 1000, user: j.user }; }
 
@@ -202,6 +209,8 @@ async function cycle() {
   setState(() => {}, false);
 }
 export const syncNow = () => cycle();
+// consent given on this device before the server tracked it (the server keeps the first consent time)
+const syncAiConsent = () => { if (myPrefs().ai_consent) setAiConsent(true).catch(() => { /* retried next start */ }); };
 export function startRemoteSync() {
   setRemoteAuth({
     async register(email, password, display_name) {
@@ -217,7 +226,7 @@ export function startRemoteSync() {
     async signOut() { try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name }, 'return=minimal'); },
-    onSignedIn() { setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); },
+    onSignedIn() { syncAiConsent(); setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); },
   });
   // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
@@ -230,6 +239,7 @@ export function startRemoteSync() {
     fetch(`${URL_}/auth/v1/verify`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ token_hash, type }) })
       .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.msg || j.error_description || 'expired'); return j; })
       .then(async j => {
+        if (!confirmAccountFromLink(j.user)) return;
         const sess = toSession(j); saveAuth(sess);
         if (type === 'recovery' || type === 'invite') {
           const pw = prompt(type === 'invite' ? 'Welcome to Bebig! Choose a password for your account (at least 8 characters)' : 'Choose a new password (at least 8 characters)');
@@ -250,7 +260,7 @@ export function startRemoteSync() {
     history.replaceState(null, '', location.pathname);
     const at = h.get('access_token')!, rt = h.get('refresh_token') || '', exp = Number(h.get('expires_in') || 3600);
     fetch(`${URL_}/auth/v1/user`, { headers: { apikey: KEY, Authorization: `Bearer ${at}` } }).then(r => r.ok ? r.json() : Promise.reject())
-      .then(user => { saveAuth({ access_token: at, refresh_token: rt, expires_at: Date.now() + exp * 1000, user }); adoptRemoteUser({ user_id: user.id, email: user.email, display_name: user.user_metadata?.display_name || user.email.split('@')[0] }); })
+      .then(user => { if (!confirmAccountFromLink(user)) return; saveAuth({ access_token: at, refresh_token: rt, expires_at: Date.now() + exp * 1000, user }); adoptRemoteUser({ user_id: user.id, email: user.email, display_name: user.user_metadata?.display_name || user.email.split('@')[0] }); })
       .catch(() => note('Your email is confirmed. Please sign in.'));
   }
   if (h.get('type') === 'recovery' && h.get('access_token')) {
@@ -272,7 +282,7 @@ export function startRemoteSync() {
   timer = setInterval(kick, 15000);
   // changes the server rejected (e.g. before a database update was applied) are retried every 5 minutes
   setInterval(() => { if (auth && navigator.onLine && getState().syncFailed?.length) { retryFailedSync(); kick(); } }, 5 * 60000);
-  if (auth) { if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
+  if (auth) { syncAiConsent(); if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
   else if (currentUserId()) {
     // looks signed in on this device, but there is no server session (e.g. signed up before cloud sync existed):
     // ask to sign in again so the data can sync — nothing local is deleted
@@ -282,6 +292,12 @@ export function startRemoteSync() {
 }
 
 /** Optional LLM phrasing of an already-verified answer (requires the user's AI consent). Falls back silently. */
+/** Records (or withdraws) consent to AI phrasing on the server, which checks it before calling the model. */
+export async function setAiConsent(on: boolean) {
+  if (!auth) return;
+  await rest('PATCH', `profiles?user_id=eq.${auth.user.id}`, { ai_consent_at: on ? new Date().toISOString() : null }, 'return=minimal');
+}
+
 export async function phraseAnswer(baby_id: string, question: string, verified_answer: string, kind: string): Promise<string> {
   try {
     const r = await fetch(`${URL_}/functions/v1/assistant`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ baby_id, question, verified_answer, kind }) });

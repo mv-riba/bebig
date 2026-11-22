@@ -69,7 +69,7 @@ export function Timeline({ items, tz, fmt, onOpen, now }: { items: TItem[]; tz: 
       {items.map(item => {
         const d = describe(item, tz, fmt, now);
         const notes = [...(item.kind === 'feed' ? item.e.observations : []), item.e.notes].filter(Boolean).join(' · ');
-        const by = users[item.e.created_by]?.display_name;
+        const by = (item.e.created_by && users[item.e.created_by]?.display_name) || 'Former caregiver';
         return (
           <li key={item.kind + itemId(item)}>
             <button className={`tl-item tl-${item.kind} ${isMinor(item) ? 'tl-minor' : ''} ${item.kind === 'poo' && item.e.nappy_type === 'wet' ? 'tl-wet' : ''}`} onClick={() => onOpen(item)} aria-label={`${d.title} at ${d.time}${d.sub ? ', ' + d.sub : ''}. Tap to edit`}>
