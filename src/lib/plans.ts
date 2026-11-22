@@ -4,8 +4,10 @@
 // (supabase/migrations/0006_entitlements.sql → plus_status()); this file mirrors its rules for local mode,
 // offline use and instant UI.
 //
-// Principle: logging, sync with one partner, safety information, basic summaries, export and full history
-// are always free. Plus is about what Bebig does with the data.
+// Principle: core logging (feeds, sleep, nappies incl. wet, growth), sync with one partner, safety information,
+// basic summaries, export and full history are always free. Plus is about what Bebig does with the data, plus the
+// optional extra trackers (bath, congestion, your own). Extras already logged stay in history and export without Plus;
+// only new extras logging needs it.
 import type { Data } from './calc';
 import type { BabyAccess } from './types';
 import { dateKey, formatDateKey } from './time';
@@ -15,22 +17,24 @@ export type Feature =
   | 'ai_phrasing'      // LLM-phrased assistant answers (server-enforced, the only real running cost)
   | 'long_trends'      // 4+ week trends and week-to-week comparisons (coming)
   | 'doctor_report'    // PDF report for doctor and baby check-ups (coming)
+  | 'extras'           // extra trackers: bath, congestion and your own (wet nappies stay free)
   | 'extra_caregivers'; // more than one caregiver besides the owner
 
 export const PLUS_FEATURES: { id: Feature; title: string; text: string; soon?: boolean }[] = [
   { id: 'predictions', title: 'Predictions', text: 'Next feed, nap and poo, estimated from your baby’s own rhythm.' },
   { id: 'ai_phrasing', title: 'AI assistant', text: 'Friendly, plain-language answers to questions about your records.' },
+  { id: 'extras', title: 'Extra trackers', text: 'Bath, congestion and your own trackers, like vitamin D, drops, pumping or tummy time.' },
   { id: 'long_trends', title: 'Long-range trends', text: 'How feeding and sleep change over weeks, not just days.', soon: true },
   { id: 'doctor_report', title: 'Check-up report', text: 'A tidy PDF summary to share with your doctor or at baby check-ups.', soon: true },
   { id: 'extra_caregivers', title: 'Whole family', text: 'One plan covers all your babies. Add grandparents or a nanny too — without Plus they’re paused, never removed.' },
 ];
 
 export const ALWAYS_FREE = [
-  'All logging: feeds, sleep, poo, growth and timers',
+  'Core logging: feeds, sleep, nappies (poo and wet), growth and timers',
   'Sync with a partner',
   'Health notices and WHO growth charts',
   'Daily summaries, patterns and 7-day trends',
-  'Your full history and data export',
+  'Your full history and data export, including any extras you’ve logged',
 ];
 
 /** Launch prices (decided 22 Nov 2026). Shown as information until Play Billing ships in v1.1; Google Play shows the local price at checkout. */

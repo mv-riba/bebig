@@ -9,6 +9,12 @@ import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, one
 import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey, formatClock, formatTime, formatDuration } from '../lib/time';
 import type { TrackerDef, TrackerIcon, TrackerKind, ExtraEntry, Level } from '../lib/types';
 import { defaultTime } from './LogFeed';
+import { usePlus, PlusLock, PlusBadge } from '../ui/plus';
+
+// Extra trackers (bath, congestion, your own) are part of Bebig Plus. Wet nappies are core logging and stay free.
+// Without Plus, existing extras stay visible and editable in history; only new trackers and new entries are locked.
+const EXTRAS_LOCK_TEXT = 'Track baths, congestion or anything else you need, like vitamin D, drops, pumping or tummy time. Anything you’ve already logged stays in your history.';
+function useCanExtras() { const plus = usePlus(); return plus ? plus.can('extras') : true; }
 
 const S = ({ size = 22, children }: { size?: number; children: React.ReactNode }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
@@ -28,7 +34,7 @@ const ICONS: TrackerIcon[] = ['pill', 'drop', 'wind', 'bath', 'sun', 'heart', 's
 
 // ---------------- Settings → Extra trackers ----------------
 export function ExtrasSettings({ onBack }: { onBack: () => void }) {
-  const ctx = useBaby(); const nav = useNav(); const toast = useToast();
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const canX = useCanExtras();
   if (!ctx) return null;
   const { baby, allTrackers } = ctx;
   const preset = (p: 'bath' | 'congestion') => allTrackers.find(t => t.preset === p);
@@ -40,12 +46,13 @@ export function ExtrasSettings({ onBack }: { onBack: () => void }) {
         <label className="row"><span className="row-ic xt-ic xt-wet"><IDrop size={20} /></span>
           <span className="row-main"><span className="row-title">Wet nappies</span><span className="row-sub">Turns “Poo” into “Nappy” with Wet / Poo / Both</span></span>
           <input type="checkbox" className="switch" checked={!!baby.wet_tracking} onChange={e => { updateBaby(baby.baby_id, { wet_tracking: e.target.checked }); toast(e.target.checked ? 'Wet nappy tracking on' : 'Wet nappy tracking off'); }} /></label>
-        {(['bath', 'congestion'] as const).map(p => (
+        {canX && (['bath', 'congestion'] as const).map(p => (
           <label className="row" key={p}><span className="row-ic xt-ic"><TrackerIconSvg icon={PRESETS[p].icon} size={20} /></span>
             <span className="row-main"><span className="row-title">{PRESETS[p].name}</span><span className="row-sub">{PRESETS[p].hint}</span></span>
             <input type="checkbox" className="switch" checked={!!preset(p)?.enabled} onChange={e => setPreset(baby.baby_id, p, e.target.checked)} /></label>
         ))}
       </div>
+      {!canX ? <PlusLock title="Extra trackers are part of Bebig Plus" text={EXTRAS_LOCK_TEXT} /> : <>
       <h2 className="sec-title">Your trackers</h2>
       {custom.length > 0 && (
         <div className="card list">{custom.map(t => (
@@ -59,13 +66,14 @@ export function ExtrasSettings({ onBack }: { onBack: () => void }) {
       )}
       <button className="btn dashed block" onClick={() => nav.push({ name: 'tracker' })}><IPlus size={18} /> Create your own tracker</button>
       <p className="muted small">For example Vitamin D (once a day), saline drops (just the time) or pumping (an amount in ml). Trackers are shared with everyone who has access to {baby.name}.</p>
+      </>}
     </Page>
   );
 }
 
 // ---------------- Create / edit a tracker ----------------
 export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm();
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const canX = useCanExtras();
   const ex: TrackerDef | undefined = id ? getState().trackers[id] : undefined;
   const [name, setName] = useState(ex?.name ?? '');
   const [icon, setIcon] = useState<TrackerIcon>(ex?.icon ?? 'pill');
@@ -73,6 +81,7 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
   const [unit, setUnit] = useState(ex?.unit ?? 'ml');
   const [err, setErr] = useState<string | null>(null);
   if (!ctx) return null;
+  if (!ex && !canX) return <Page title="New tracker" onCancel={onDone}><PlusLock title="Extra trackers are part of Bebig Plus" text={EXTRAS_LOCK_TEXT} /></Page>;
   const save = () => {
     setErr(null);
     const n = name.trim();
@@ -107,7 +116,7 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
 
 // ---------------- Log / edit an extra entry ----------------
 export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: string; entryId?: string; onKey?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000);
+  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000); const canX = useCanExtras();
   const timer = useStore(s => s.extraTimers?.[trackerId ?? ''] ?? null);
   const ex: ExtraEntry | undefined = entryId ? getState().extras[entryId] : undefined;
   const t: TrackerDef | undefined = getState().trackers[ex?.tracker_id ?? trackerId ?? ''];
@@ -119,6 +128,8 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
   const [notes, setNotes] = useState(ex?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
   if (!ctx || !t) return null;
+  // a running timer can always be stopped and saved, even if Plus ended while it ran
+  if (!ex && !timer && !canX) return <Page title={t.name} onCancel={onDone}><PlusLock title="Extra trackers are part of Bebig Plus" text={EXTRAS_LOCK_TEXT} /></Page>;
   const save = () => {
     setErr(null);
     const iso = fromLocalInput(time, tz);
@@ -177,7 +188,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
 // ---------------- Home: "Log something else" sheet ----------------
 export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000);
-  const timers = useStore(s => s.extraTimers ?? {});
+  const timers = useStore(s => s.extraTimers ?? {}); const canX = useCanExtras();
   if (!ctx) return null;
   const { baby, trackers, extras, data, prefs } = ctx; const tz = baby.timezone;
   const today = todayKey(tz);
@@ -198,7 +209,11 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <span className="tile-ic xt-wet"><IDrop size={22} /></span><span className="tile-n">Wet nappy</span>
             <span className="tile-s">{wetToday} today{lastWet ? ` · ${formatAgo(lastWet.datetime, now)}` : ''}</span></button>
         )}
-        {trackers.map(t => { const tm = timers[t.tracker_id]; const st = tm ? { text: `● ${formatClock(extraTimerSeconds(tm, now))}${tm.segment_started_at ? '' : ' paused'}`, done: false } : tileStatus(t, extras, tz, prefs.time_format, now); return (
+        {!canX && (
+          <button className="tile tile-plus" onClick={() => { onClose(); nav.push({ name: 'plus' }); }} aria-label="Extra trackers are part of Bebig Plus. See what’s included">
+            <span className="tile-ic"><TrackerIconSvg icon="bath" size={22} /></span><span className="tile-n">Extra trackers</span><span className="tile-s"><PlusBadge /></span></button>
+        )}
+        {canX && trackers.map(t => { const tm = timers[t.tracker_id]; const st = tm ? { text: `● ${formatClock(extraTimerSeconds(tm, now))}${tm.segment_started_at ? '' : ' paused'}`, done: false } : tileStatus(t, extras, tz, prefs.time_format, now); return (
           <button key={t.tracker_id} className={`tile ${st.done ? 'done' : ''}`} onClick={() => tap(t)} aria-label={`${t.name}: ${st.text}. ${oneTap(t) ? 'Tap to log now' : 'Tap to add'}`}>
             <span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
         <button className="tile tile-manage" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>
