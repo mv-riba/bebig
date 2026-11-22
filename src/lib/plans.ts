@@ -14,14 +14,14 @@ export type Feature =
   | 'predictions'      // "Next" tab, next likely events, estimate answers in the assistant
   | 'ai_phrasing'      // LLM-phrased assistant answers (server-enforced, the only real running cost)
   | 'long_trends'      // 4+ week trends and week-to-week comparisons (coming)
-  | 'doctor_report'    // PDF report for doctor / neuvola visits (coming)
+  | 'doctor_report'    // PDF report for doctor and baby check-ups (coming)
   | 'extra_caregivers'; // more than one caregiver besides the owner
 
 export const PLUS_FEATURES: { id: Feature; title: string; text: string; soon?: boolean }[] = [
   { id: 'predictions', title: 'Predictions', text: 'Next feed, nap and poo, estimated from your baby’s own rhythm.' },
   { id: 'ai_phrasing', title: 'AI assistant', text: 'Friendly, plain-language answers to questions about your records.' },
   { id: 'long_trends', title: 'Long-range trends', text: 'How feeding and sleep change over weeks, not just days.', soon: true },
-  { id: 'doctor_report', title: 'Doctor & neuvola report', text: 'A tidy PDF summary to take to check-ups.', soon: true },
+  { id: 'doctor_report', title: 'Check-up report', text: 'A tidy PDF summary to share with your doctor or at baby check-ups.', soon: true },
   { id: 'extra_caregivers', title: 'Whole family', text: 'One plan covers all your babies. Add grandparents or a nanny too — without Plus they’re paused, never removed.' },
 ];
 
