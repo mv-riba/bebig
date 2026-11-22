@@ -47,6 +47,12 @@ export const oneTap = (t: TrackerDef) => t.kind === 'event' || t.kind === 'daily
 export const entriesFor = (extras: ExtraEntry[], tracker_id: string) =>
   extras.filter(e => e.tracker_id === tracker_id).sort((a, b) => +new Date(a.datetime) - +new Date(b.datetime));
 
+/** For a "Once a day" tracker: the entry already given on that local day, if any. */
+export function dailyEntryOn(t: TrackerDef, extras: ExtraEntry[], tz: string, key: string): ExtraEntry | undefined {
+  if (t.kind !== 'daily') return undefined;
+  return entriesFor(extras, t.tracker_id).filter(e => dateKey(e.datetime, tz) === key).pop();
+}
+
 /** Short status for a tile: when it was last done (or today's check-off). */
 export function tileStatus(t: TrackerDef, extras: ExtraEntry[], tz: string, fmt: TimeFormat, now = Date.now()): { text: string; done: boolean } {
   const es = entriesFor(extras, t.tracker_id); const last = es[es.length - 1];

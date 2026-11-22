@@ -6,7 +6,7 @@ import { useNav } from '../ui/nav';
 import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds } from '../lib/store';
 import { IPlay, IPause, IStop } from '../ui/icons';
 import { MAX_EXTRA_AMOUNT } from '../lib/validate';
-import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus } from '../lib/extras';
+import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus, dailyEntryOn } from '../lib/extras';
 import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey, formatClock, formatTime, formatDuration } from '../lib/time';
 import type { TrackerDef, TrackerIcon, TrackerKind, ExtraEntry, Level } from '../lib/types';
 import { defaultTime } from './LogFeed';
@@ -141,6 +141,9 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
     if (t.kind === 'amount' && num! > MAX_EXTRA_AMOUNT) return setErr('That amount is too large — please check it.');
     if (t.kind === 'duration' && (mins == null || mins <= 0)) return setErr('Enter how many minutes.');
     if (t.kind === 'level' && !level) return setErr('Choose a level.');
+    // "Once a day" trackers: only one entry per day, so every caregiver sees the same check-off
+    const given = dailyEntryOn(t, ctx.extras.filter(e => e.extra_id !== ex?.extra_id), tz, dateKey(iso, tz));
+    if (given) return setErr(`${t.name} was already given that day at ${formatTime(given.datetime, tz, ctx.prefs.time_format)}. Edit that entry instead.`);
     const id = upsertEntry('extras', { ...(ex ?? {}), baby_id: ctx.baby.baby_id, tracker_id: t.tracker_id, datetime: iso,
       value_num: t.kind === 'amount' ? num : null, duration_seconds: t.kind === 'duration' ? (mins ?? 0) * 60 : null, level: t.kind === 'level' ? level : null, notes: notes.trim() || null });
     toast(ex ? `${t.name} updated` : `${t.name} logged`, ex ? undefined : { label: 'Undo', run: () => deleteEntry('extras', id) });
@@ -200,6 +203,12 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const wetToday = wets.filter(p => dateKey(p.datetime, tz) === today).length;
   const lastWet = wets[wets.length - 1];
   const tap = (t: TrackerDef) => {
+    // "Once a day" and already given today: don't log it twice, offer to edit today's entry instead
+    const given = dailyEntryOn(t, extras, tz, today);
+    if (given) {
+      toast(`${t.name} already given today at ${formatTime(given.datetime, tz, prefs.time_format)}`, { label: 'Edit', run: () => nav.push({ name: 'extra', entryId: given.extra_id }) });
+      onClose(); return;
+    }
     if (!oneTap(t)) { onClose(); nav.push({ name: 'extra', trackerId: t.tracker_id }); return; }
     const id = logExtraNow(t);
     toast(t.kind === 'daily' ? `${t.name} ✓ logged` : `${t.name} logged`, { label: 'Undo', run: () => deleteEntry('extras', id) });
@@ -218,7 +227,7 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
             <ICrown size={14} className="tile-crown" /><span className="tile-ic"><TrackerIconSvg icon="bath" size={22} /></span><span className="tile-n">Extra trackers</span><span className="tile-s"><PlusBadge /></span></button>
         )}
         {canX && trackers.map(t => { const tm = timers[t.tracker_id]; const st = tm ? { text: `● ${formatClock(extraTimerSeconds(tm, now))}${tm.segment_started_at ? '' : ' paused'}`, done: false } : tileStatus(t, extras, tz, prefs.time_format, now); return (
-          <button key={t.tracker_id} className={`tile ${st.done ? 'done' : ''}`} onClick={() => tap(t)} aria-label={`${t.name}: ${st.text}. ${oneTap(t) ? 'Tap to log now' : 'Tap to add'}`}>
+          <button key={t.tracker_id} className={`tile ${st.done ? 'done' : ''}`} onClick={() => tap(t)} aria-label={`${t.name}: ${st.text}. ${t.kind === 'daily' && st.done ? 'Done for today' : oneTap(t) ? 'Tap to log now' : 'Tap to add'}`}>
             <ICrown size={14} className="tile-crown" /><span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
         <button className="tile tile-manage" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>
           <span className="tile-ic"><IPlus size={22} /></span><span className="tile-n">Manage</span><span className="tile-s">Add or hide</span></button>
