@@ -41,10 +41,10 @@ export function ExtrasSettings({ onBack }: { onBack: () => void }) {
   const custom = allTrackers.filter(t => !t.preset);
   return (
     <Page title="Extra trackers" onBack={onBack}>
-      <p className="muted small">Turn on only what you need. Feed, Poo and Sleep always stay front and centre — extras appear under <strong>Log something else</strong> on Home.</p>
+      <p className="muted small">Turn on only what you need. Feed, {baby.wet_tracking ? 'Nappy' : 'Poo'} and Sleep always stay front and centre — extras appear under <strong>Log something else</strong> on Home.</p>
       <div className="card list">
         <label className="row"><span className="row-ic xt-ic xt-wet"><IDrop size={20} /></span>
-          <span className="row-main"><span className="row-title">Wet nappies</span><span className="row-sub">Turns “Poo” into “Nappy” with Wet / Poo / Both</span></span>
+          <span className="row-main"><span className="row-title">Wet nappies</span><span className="row-sub">{baby.wet_tracking ? 'Nappies are logged as Wet / Poo / Both' : 'Turns “Poo” into “Nappy” with Wet / Poo / Both'}</span></span>
           <input type="checkbox" className="switch" checked={!!baby.wet_tracking} onChange={e => { updateBaby(baby.baby_id, { wet_tracking: e.target.checked }); toast(e.target.checked ? 'Wet nappy tracking on' : 'Wet nappy tracking off'); }} /></label>
         {canX && (['bath', 'congestion'] as const).map(p => (
           <label className="row" key={p}><span className="row-ic xt-ic"><TrackerIconSvg icon={PRESETS[p].icon} size={20} /></span>

@@ -56,7 +56,7 @@ export function Home() {
           <span className="sum-label">Feed</span>
           {lf ? <><span className="sum-time">{formatTime(lf.start_datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lf.start_datetime, now)})</span></> : <span className="sum-ago">No feeds yet</span>}
         </button>
-        <button className="sum-card sum-poo" onClick={() => nav.push({ name: 'poo' })} aria-label={lp ? `Last poo ${formatTime(lp.datetime, tz, fmt)}, ${formatAgo(lp.datetime, now)}. Log poo` : 'No poos yet. Log poo'}>
+        <button className="sum-card sum-poo" onClick={() => nav.push({ name: 'poo' })} aria-label={lp ? `Last ${nappy ? 'nappy' : 'poo'} ${formatTime(lp.datetime, tz, fmt)}, ${formatAgo(lp.datetime, now)}. Log ${nappy ? 'nappy' : 'poo'}` : `No ${nappy ? 'nappies' : 'poos'} yet. Log ${nappy ? 'nappy' : 'poo'}`}>
           <span className="sum-ic"><IPoo size={30} /></span>
           <span className="sum-label">{nappy ? 'Nappy' : 'Poo'}</span>
           {lp ? <><span className="sum-time">{formatTime(lp.datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lp.datetime, now)})</span></> : <span className="sum-ago">{nappy ? 'No poo yet' : 'None yet'}</span>}
@@ -93,7 +93,7 @@ export function Home() {
       <section>
         <div className="sec-head"><h2>Today’s activity</h2><button className="link" onClick={() => nav.openDay(today)}><ICalendar size={16} /> Full day</button></div>
         {items.length ? <Timeline items={items} tz={tz} fmt={fmt} onOpen={open} now={now} />
-          : <Empty title="Nothing logged yet today" text="Use the buttons above to log a feed, poo or sleep. It only takes a couple of taps." />}
+          : <Empty title="Nothing logged yet today" text={`Use the buttons above to log a feed, ${nappy ? 'nappy' : 'poo'} or sleep. It only takes a couple of taps.`} />}
         {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feed{stats.feedCount === 1 ? '' : 's'} · {stats.pooCount} poo{stats.pooCount === 1 ? '' : 's'}{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
       </section>
       <TrialNudge />

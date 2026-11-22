@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Page, Segmented, Field, useToast, useNow, Wave, useConfirm } from '../ui/ui';
-import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IChevron, IMoon } from '../ui/icons';
+import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IMoon } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, sleepElapsed, getState, live } from '../lib/store';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, formatDuration, dateKey } from '../lib/time';
@@ -92,7 +92,6 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
           <button className="btn primary block" onClick={saveManual}>{existing ? 'Save changes' : 'Save Sleep'}</button>
         </>
       )}
-      {mode === 'timer' && !existing && !active && <><div className="or">or</div><button className="row tap card" onClick={() => setMode('manual')}><span className="row-ic"><ICalendar /></span><span className="row-main"><span className="row-title">Enter manually</span></span><IChevron /></button></>}
       <div className="moon-deco" aria-hidden="true"><IMoon size={56} /></div>
       <Wave tone="lav" />
     </Page>

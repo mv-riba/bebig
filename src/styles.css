@@ -177,7 +177,7 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .ring { position: relative; width: 240px; height: 240px; }
 .ring > svg { width: 100%; height: 100%; position: absolute; inset: 0; }
 .ring-bg { fill: none; stroke: var(--accent-l); stroke-width: 12; } .ring-fg { fill: none; stroke: var(--accent-d); stroke-width: 12; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
-.ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--accent-d); gap: 2px; }
+.ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--accent-d); gap: 2px; padding: 0 44px; text-align: center; }
 .ring-inner .timer-big { color: var(--ink); }
 
 /* ---------- Calendar ---------- */
