@@ -231,7 +231,7 @@ export function startRemoteSync() {
   // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
   const note = (m: string) => { try { sessionStorage.setItem('bebig:authmsg', m); } catch { /* */ } };
-  // Branded email links point at our own domain: https://bebig.mvriba.com/?token_hash=…&type=signup|recovery|email_change
+  // Branded email links point at our own domain: https://bebig.app/?token_hash=…&type=signup|recovery|email_change
   const q = new URLSearchParams(location.search);
   if (q.get('token_hash') && q.get('type')) {
     const token_hash = q.get('token_hash')!, type = q.get('type')!;

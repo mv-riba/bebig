@@ -7,7 +7,7 @@
 // Deploy: supabase functions deploy assistant
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'; // pinned: a new upstream release can't change this function silently
 
-const ALLOWED_ORIGINS = ['https://bebig.mvriba.com', 'http://localhost:5173'];
+const ALLOWED_ORIGINS = ['https://bebig.app', 'http://localhost:5173'];
 
 const SYSTEM = `You rephrase answers for Bebig, a newborn routine-tracking app.
 Rules: Use ONLY the facts in VERIFIED_ANSWER. Do not add, change or estimate any number, time or date.
