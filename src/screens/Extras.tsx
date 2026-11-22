@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, Row } from '../ui/ui';
-import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash } from '../ui/icons';
+import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash, ICrown } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
 import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds } from '../lib/store';
@@ -48,12 +48,12 @@ export function ExtrasSettings({ onBack }: { onBack: () => void }) {
           <input type="checkbox" className="switch" checked={!!baby.wet_tracking} onChange={e => { updateBaby(baby.baby_id, { wet_tracking: e.target.checked }); toast(e.target.checked ? 'Wet nappy tracking on' : 'Wet nappy tracking off'); }} /></label>
         {canX && (['bath', 'congestion'] as const).map(p => (
           <label className="row" key={p}><span className="row-ic xt-ic"><TrackerIconSvg icon={PRESETS[p].icon} size={20} /></span>
-            <span className="row-main"><span className="row-title">{PRESETS[p].name}</span><span className="row-sub">{PRESETS[p].hint}</span></span>
+            <span className="row-main"><span className="row-title">{PRESETS[p].name} <PlusBadge /></span><span className="row-sub">{PRESETS[p].hint}</span></span>
             <input type="checkbox" className="switch" checked={!!preset(p)?.enabled} onChange={e => setPreset(baby.baby_id, p, e.target.checked)} /></label>
         ))}
       </div>
       {!canX ? <PlusLock title="Extra trackers are part of Bebig Plus" text={EXTRAS_LOCK_TEXT} /> : <>
-      <h2 className="sec-title">Your trackers</h2>
+      <h2 className="sec-title">Your trackers <PlusBadge /></h2>
       {custom.length > 0 && (
         <div className="card list">{custom.map(t => (
           <div className="row" key={t.tracker_id}>
@@ -211,11 +211,11 @@ export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => voi
         )}
         {!canX && (
           <button className="tile tile-plus" onClick={() => { onClose(); nav.push({ name: 'plus' }); }} aria-label="Extra trackers are part of Bebig Plus. See what’s included">
-            <span className="tile-ic"><TrackerIconSvg icon="bath" size={22} /></span><span className="tile-n">Extra trackers</span><span className="tile-s"><PlusBadge /></span></button>
+            <ICrown size={14} className="tile-crown" /><span className="tile-ic"><TrackerIconSvg icon="bath" size={22} /></span><span className="tile-n">Extra trackers</span><span className="tile-s"><PlusBadge /></span></button>
         )}
         {canX && trackers.map(t => { const tm = timers[t.tracker_id]; const st = tm ? { text: `● ${formatClock(extraTimerSeconds(tm, now))}${tm.segment_started_at ? '' : ' paused'}`, done: false } : tileStatus(t, extras, tz, prefs.time_format, now); return (
           <button key={t.tracker_id} className={`tile ${st.done ? 'done' : ''}`} onClick={() => tap(t)} aria-label={`${t.name}: ${st.text}. ${oneTap(t) ? 'Tap to log now' : 'Tap to add'}`}>
-            <span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
+            <ICrown size={14} className="tile-crown" /><span className="tile-ic">{st.done ? <ICheck size={22} /> : <TrackerIconSvg icon={t.icon} />}</span><span className="tile-n">{t.name}</span><span className="tile-s">{st.text}</span></button>); })}
         <button className="tile tile-manage" onClick={() => { onClose(); nav.push({ name: 'extras-settings' }); }}>
           <span className="tile-ic"><IPlus size={22} /></span><span className="tile-n">Manage</span><span className="tile-s">Add or hide</span></button>
       </div>

@@ -18,6 +18,8 @@ export const IFormula = (p: P) => <S {...p}><rect x="6" y="7" width="12" height=
 export const IPoo = (p: P) => <S {...p}><path d="M12 3.5c1.5 1 1.6 2.4 1 3.3 2.2 0 3.6 1.4 3.4 3.2 2 .4 3.1 1.9 2.8 3.6 1.4.8 1.9 2.3 1.4 3.6-.6 1.6-2.3 2.3-4.3 2.3H7.7c-2 0-3.7-.7-4.3-2.3-.5-1.3 0-2.8 1.4-3.6-.3-1.7.8-3.2 2.8-3.6-.2-1.8 1.2-3.2 3.4-3.2-.4-1.4.2-2.6 1-3.3z" /></S>;
 export const IMoon = (p: P) => <S {...p}><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" /></S>;
 export const ISparkle = (p: P) => <S {...p}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" /></S>;
+// Bebig Plus mark: a soft crown. Kept separate from ISparkle, which means AI and insights.
+export const ICrown = (p: P) => <S {...p}><path d="M4.2 17.5 3 8.6l4.9 3.6L12 5.5l4.1 6.7L21 8.6l-1.2 8.9z" /><path d="M5 20.5h14" /></S>;
 export const IPlus = (p: P) => <S {...p}><path d="M12 5v14M5 12h14" /></S>;
 export const IMinus = (p: P) => <S {...p}><path d="M5 12h14" /></S>;
 export const IChevron = (p: P) => <S {...p}><path d="m9 6 6 6-6 6" /></S>;

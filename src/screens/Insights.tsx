@@ -52,7 +52,7 @@ export function Insights() {
   return (
     <div className="screen insights">
       <header className="screen-head"><span /><h1>Insights</h1><button className="icon-btn" aria-label="Growth charts" onClick={() => nav.push({ name: 'growth' })}><IChart /></button></header>
-      <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: canPredict ? 'Next' : <>Next <PlusBadge /></> }, { value: 'trends', label: 'Trends' }]} />
+      <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: <>Next <PlusBadge /></> }, { value: 'trends', label: 'Trends' }]} />
 
       {tab === 'overview' && (rep.enoughData ? (
         <>
@@ -60,9 +60,9 @@ export function Insights() {
           <h2 className="sec-title">Key patterns</h2>
           {rep.observations.filter(o => ['sleep-nap-window', 'feed-interval', 'poo-frequency'].includes(o.insight_id)).map(i => <InsightCard key={i.insight_id} i={i} fmt={fmt} tz={tz} />)}
           <TrialNudge />
-          {rep.predictions.length > 0 && !canPredict && <><h2 className="sec-title">Next likely events</h2>{lockedPredictions}</>}
+          {rep.predictions.length > 0 && !canPredict && <><h2 className="sec-title">Next likely events <PlusBadge /></h2>{lockedPredictions}</>}
           {rep.predictions.length > 0 && canPredict && <>
-            <h2 className="sec-title">Next likely events</h2>
+            <h2 className="sec-title">Next likely events <PlusBadge /></h2>
             <div className="card">{rep.predictions.map(p => (
               <div key={p.insight_id} className="pred-row"><span className={`ins-ic ic-${p.category}`}>{CAT_ICON[p.category]}</span>
                 <div><strong>{p.title}</strong><span className="muted small">{p.predicted_at && p.insight_id !== 'predict-poo' ? `~ ${formatTime(p.predicted_at, tz, fmt)} (±${p.uncertainty_minutes} min)` : p.description}</span></div></div>
