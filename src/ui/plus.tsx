@@ -160,6 +160,7 @@ export function PlusPage({ onBack }: { onBack: () => void }) {
         {ALWAYS_FREE.map(t => <div key={t} className="row"><span className="row-ic"><ICheck /></span><span className="row-main"><span className="row-title">{t}</span></span></div>)}
       </div>
       <p className="muted tiny center">Health notices and anything you’ve logged are never behind a paywall.</p>
+      <p className="muted tiny center"><a className="link" href="https://bebig.mvriba.com/#pricing" target="_blank" rel="noopener">Compare free and Plus on the Bebig website</a></p>
     </Page>
   );
 }
