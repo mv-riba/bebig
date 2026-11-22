@@ -6,7 +6,7 @@ import { IMoon, IBottle, IPoo, ISparkle, IChart, IInfo } from '../ui/icons';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatDateKey, formatTime } from '../lib/time';
 import type { AIInsight } from '../lib/types';
-import { usePlus, PlusLock, PlusBadge, TrialNudge } from '../ui/plus';
+import { usePlus, PlusLock, PlusBadge, PlusNote, TrialNudge } from '../ui/plus';
 
 const CAT_ICON = { sleep: <IMoon />, feeding: <IBottle />, poo: <IPoo />, overview: <ISparkle /> };
 
@@ -52,7 +52,7 @@ export function Insights() {
   return (
     <div className="screen insights">
       <header className="screen-head"><span /><h1>Insights</h1><button className="icon-btn" aria-label="Growth charts" onClick={() => nav.push({ name: 'growth' })}><IChart /></button></header>
-      <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: <>Next <PlusBadge /></> }, { value: 'trends', label: 'Trends' }]} />
+      <Segmented label="Insights section" value={tab} onChange={setTab} options={[{ value: 'overview', label: 'Overview' }, { value: 'patterns', label: 'Patterns' }, { value: 'predictions', label: 'Next' }, { value: 'trends', label: 'Trends' }]} />
 
       {tab === 'overview' && (rep.enoughData ? (
         <>
@@ -82,6 +82,7 @@ export function Insights() {
       {tab === 'predictions' && !canPredict && lockedPredictions}
       {tab === 'predictions' && canPredict && (
         <>
+          <PlusNote>Predictions are part of Bebig Plus.</PlusNote>
           <div className="alert notice soft"><IInfo size={20} /><span>Estimates come from your recorded data and can be wrong. They’re for planning only — always follow your baby’s hunger and tiredness cues.</span></div>
           {rep.predictions.length ? rep.predictions.map(i => <InsightCard key={i.insight_id} i={i} fmt={fmt} tz={tz} />) : notEnough || <Empty title="Not enough repeated events yet" text="Predictions need several recorded intervals between feeds, sleeps or bowel movements." />}
         </>
