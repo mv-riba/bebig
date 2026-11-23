@@ -12,8 +12,10 @@ permissions:
   pages: write
   id-token: write
 
+# One run per branch/PR: a newer push to the same branch cancels the older run,
+# but runs on different branches/PRs no longer cancel each other.
 concurrency:
-  group: pages
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,7 +26,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - run: npm ci || npm install
+          cache: npm
+      # strict: fails if package-lock.json is out of sync with package.json
+      - run: npm ci
       - run: npm test
       # reported on every PR; not blocking yet (the codebase has never been type-checked in CI)
       - run: npm run typecheck
@@ -41,6 +45,10 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
+    # only one Pages deploy at a time; a deploy already running is allowed to finish
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
