@@ -130,9 +130,9 @@ function setSession(user_id: string | null) {
 
 // Remote auth provider (Supabase) — registered by supabase.ts when cloud sync is configured.
 export interface RemoteAuth {
-  register(email: string, password: string, display_name: string): Promise<{ user_id: string; email: string; display_name: string }>;
-  signIn(email: string, password: string): Promise<{ user_id: string; email: string; display_name: string }>;
-  reset(email: string): Promise<void>;
+  register(email: string, password: string, display_name: string, captchaToken?: string): Promise<{ user_id: string; email: string; display_name: string }>;
+  signIn(email: string, password: string, captchaToken?: string): Promise<{ user_id: string; email: string; display_name: string }>;
+  reset(email: string, captchaToken?: string): Promise<void>;
   signOut(): Promise<void>;
   deleteAccount(): Promise<void>;
   updateName(name: string): Promise<void>;
@@ -174,11 +174,11 @@ export function adoptRemoteUser(u: { user_id: string; email: string; display_nam
   remote?.onSignedIn();
 }
 
-export async function register(email: string, password: string, display_name: string) {
+export async function register(email: string, password: string, display_name: string, captchaToken?: string) {
   email = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address.');
   if (password.length < 8) throw new Error('Password must be at least 8 characters.');
-  if (remote) return adoptRemoteUser(await remote.register(email, password, display_name.trim()));
+  if (remote) return adoptRemoteUser(await remote.register(email, password, display_name.trim(), captchaToken));
   if (Object.values(state.users).some(u => u.email === email)) throw new Error('An account with this email already exists.');
   const user_id = uuid(); const salt = uuid(); const hash = await hashPw(password, salt); const t = nowIso();
   setState(s => {
@@ -190,9 +190,9 @@ export async function register(email: string, password: string, display_name: st
   setSession(user_id);
 }
 
-export async function signIn(email: string, password: string) {
+export async function signIn(email: string, password: string, captchaToken?: string) {
   email = email.trim().toLowerCase();
-  if (remote) return adoptRemoteUser(await remote.signIn(email, password));
+  if (remote) return adoptRemoteUser(await remote.signIn(email, password, captchaToken));
   const c = state.credentials[email];
   if (!c || (await hashPw(password, c.salt)) !== c.hash) throw new Error('Email or password is incorrect.');
   setSession(c.user_id);
@@ -204,9 +204,9 @@ export function signOut() {
   setSession(null);
 }
 
-export async function resetPassword(email: string, newPassword: string) {
+export async function resetPassword(email: string, newPassword: string, captchaToken?: string) {
   email = email.trim().toLowerCase();
-  if (remote) return remote.reset(email);
+  if (remote) return remote.reset(email, captchaToken);
   const c = state.credentials[email];
   if (!c) return; // never reveal whether an account exists
   if (newPassword.length < 8) throw new Error('Password must be at least 8 characters.');

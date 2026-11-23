@@ -14,6 +14,8 @@ const cfg = fs.existsSync('bebig.config.json') ? JSON.parse(fs.readFileSync('beb
 const supabaseUrl = process.env.BEBIG_SUPABASE_URL || cfg.supabaseUrl || '';
 const supabaseAnonKey = process.env.BEBIG_SUPABASE_ANON_KEY || cfg.supabaseAnonKey || '';
 const remote = !serve && !process.env.BEBIG_LOCAL && supabaseUrl && supabaseAnonKey;
+// Cloudflare Turnstile site key (public). Only used with cloud sync: Supabase Auth checks the token with the secret key.
+const turnstileSiteKey = remote ? (process.env.BEBIG_TURNSTILE_SITE_KEY ?? cfg.turnstileSiteKey ?? '') : '';
 const version = pkg.version + (serve ? '-dev' : '') + (process.env.GITHUB_SHA ? '+' + process.env.GITHUB_SHA.slice(0, 7) : '');
 const out = 'dist';
 fs.rmSync(out, { recursive: true, force: true });
@@ -32,7 +34,7 @@ const opts = {
   minify: !serve, sourcemap: serve ? 'inline' : false, jsx: 'automatic', loader: { '.json': 'json' }, metafile: true,
   define: {
     'process.env.NODE_ENV': JSON.stringify(serve ? 'development' : 'production'),
-    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: remote ? supabaseUrl : '', supabaseAnonKey: remote ? supabaseAnonKey : '', version, earlyAccessUntil: process.env.BEBIG_EARLY_ACCESS_UNTIL ?? cfg.earlyAccessUntil ?? '' }),
+    __BEBIG_CONFIG__: JSON.stringify({ supabaseUrl: remote ? supabaseUrl : '', supabaseAnonKey: remote ? supabaseAnonKey : '', version, earlyAccessUntil: process.env.BEBIG_EARLY_ACCESS_UNTIL ?? cfg.earlyAccessUntil ?? '', turnstileSiteKey }),
   },
 };
 
@@ -40,8 +42,10 @@ function writeHtml(meta) {
   const outputs = Object.keys(meta.outputs).map(p => path.basename(p));
   const js = outputs.find(f => f.endsWith('.js')), css = outputs.find(f => f.endsWith('.css'));
   const html = fs.readFileSync('index.html', 'utf8').replace('<!--CSS-->', css ? `<link rel="stylesheet" href="./${css}">` : '').replace('<!--JS-->', `<script type="module" src="./${js}"></script>`)
-    // Content-Security-Policy: scripts only from this site; network only to this site and the Supabase project
-    .replace('__CONNECT_SRC__', remote ? new URL(supabaseUrl).origin : '');
+    // Content-Security-Policy: scripts only from this site (+ Turnstile's script and frame when CAPTCHA is on);
+    // network only to this site and the Supabase project
+    .replace('__CONNECT_SRC__', remote ? new URL(supabaseUrl).origin : '')
+    .replaceAll('__CAPTCHA_SRC__', turnstileSiteKey ? 'https://challenges.cloudflare.com' : '');
   fs.writeFileSync(path.join(out, 'index.html'), html);
   // service worker precache list + versioned cache name
   const sw = fs.readFileSync(path.join(out, 'sw.js'), 'utf8').replace('__VERSION__', version + '-' + Date.now()).replace('__ASSETS__', JSON.stringify(['/', '/index.html', `/${js}`, css && `/${css}`, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'].filter(Boolean)));

@@ -8,6 +8,7 @@ import { TzSelect, resizeImage } from './Settings';
 import { syncMode } from '../lib/sync';
 import type { FeedingPreference, Sex } from '../lib/types';
 import { checkBirthDetails } from '../lib/validate';
+import { Captcha, captchaEnabled } from '../ui/Captcha';
 
 export function Logo({ size = 44 }: { size?: number }) {
   return (
@@ -26,20 +27,30 @@ export function AuthScreen() {
   const [msg, setMsg] = useState<string | null>(() => { try { const m = sessionStorage.getItem('bebig:authmsg'); sessionStorage.removeItem('bebig:authmsg'); return m; } catch { return null; } });
   const [busy, setBusy] = useState(false);
   const remoteMode = syncMode() === 'remote';
+  const needCaptcha = remoteMode && captchaEnabled();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
   const submit = async (e: React.FormEvent) => {
-    e.preventDefault(); setErr(null); setMsg(null); setBusy(true);
+    e.preventDefault(); setErr(null); setMsg(null);
+    if (needCaptcha && !captchaToken) return setErr('Please complete the security check below.');
+    const token = captchaToken ?? undefined;
+    setBusy(true);
     try {
-      if (mode === 'signin') await signIn(email, pw);
-      else if (mode === 'register') await register(email, pw, name);
-      else if (remoteMode) { await resetPassword(email, ''); setMsg('If an account exists for that email, we’ve sent a link to reset your password.'); setMode('signin'); }
+      if (mode === 'signin') await signIn(email, pw, token);
+      else if (mode === 'register') await register(email, pw, name, token);
+      else if (remoteMode) { await resetPassword(email, '', token); setMsg('If an account exists for that email, we’ve sent a link to reset your password.'); setMode('signin'); }
       else { await resetPassword(email, pw); setMsg('If an account exists for that email, its password has been updated. You can sign in now.'); setMode('signin'); setPw(''); }
     } catch (e: any) {
       const m: string = e.message || 'Something went wrong';
       if (m.startsWith('Check your email')) { setMsg(`We’ve sent a confirmation link to ${email.trim()}. Open it on this device, then you’re in (or come back and sign in).`); setMode('signin'); }
       else if (/email not confirmed/i.test(m)) setErr('Please confirm your email first — check your inbox (and spam) for the link from Bebig.');
       else if (/rate limit/i.test(m)) setErr('Too many emails were sent recently. Please wait a little and try again.');
+      else if (/captcha/i.test(m)) setErr('The security check failed or expired. Please try again.');
       else setErr(m);
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+      if (needCaptcha) setCaptchaReset(n => n + 1); // tokens are single-use
+    }
   };
   return (
     <div className="auth">
@@ -55,7 +66,8 @@ export function AuthScreen() {
         </Field>}
         {err && <div className="alert error" role="alert">{err}</div>}
         {msg && <div className="alert ok" role="status">{msg}</div>}
-        <button className="btn primary block" disabled={busy}>{mode === 'signin' ? 'Sign in' : mode === 'register' ? 'Create account' : remoteMode ? 'Send reset link' : 'Update password'}</button>
+        {needCaptcha && <Captcha action={mode === 'register' ? 'signup' : mode} resetSignal={captchaReset} onToken={setCaptchaToken} />}
+        <button className="btn primary block" disabled={busy || (needCaptcha && !captchaToken)}>{mode === 'signin' ? 'Sign in' : mode === 'register' ? 'Create account' : remoteMode ? 'Send reset link' : 'Update password'}</button>
         {mode === 'signin' && <button type="button" className="link small center-block" onClick={() => { setMode('reset'); setErr(null); }}>Forgot password?</button>}
         {mode === 'reset' && <button type="button" className="link small center-block" onClick={() => setMode('signin')}>Back to sign in</button>}
         {syncMode() === 'local' && <p className="muted tiny center">Local mode — accounts and records stay in this browser. {mode === 'reset' ? 'In the live app, a reset link is emailed instead.' : ''}</p>}

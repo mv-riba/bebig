@@ -22,6 +22,8 @@ async function gotrue(path: string, body: any) {
   if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Authentication failed');
   return j;
 }
+// CAPTCHA token for sign-up, sign-in and password reset; Supabase Auth verifies it with Turnstile (single use)
+const captcha = (t?: string) => t ? { gotrue_meta_security: { captcha_token: t } } : {};
 // Links (email confirmation, password reset) can carry a session. A link someone else sent could carry *their*
 // session, so the app never switches to an account from a link without the user confirming which account it is.
 function confirmAccountFromLink(user: { id: string; email: string }): boolean {
@@ -214,16 +216,16 @@ export const syncNow = () => cycle();
 const syncAiConsent = () => { if (myPrefs().ai_consent) setAiConsent(true).catch(() => { /* retried next start */ }); };
 export function startRemoteSync() {
   setRemoteAuth({
-    async register(email, password, display_name) {
-      const j = await gotrue('signup', { email, password, data: { display_name } });
+    async register(email, password, display_name, captchaToken) {
+      const j = await gotrue('signup', { email, password, data: { display_name }, ...captcha(captchaToken) });
       if (!j.access_token) throw new Error('Check your email to confirm your account, then sign in.');
       saveAuth(toSession(j)); return { user_id: j.user.id, email: j.user.email, display_name };
     },
-    async signIn(email, password) {
-      const j = await gotrue('token?grant_type=password', { email, password }); saveAuth(toSession(j));
+    async signIn(email, password, captchaToken) {
+      const j = await gotrue('token?grant_type=password', { email, password, ...captcha(captchaToken) }); saveAuth(toSession(j));
       return { user_id: j.user.id, email: j.user.email, display_name: j.user.user_metadata?.display_name || email.split('@')[0] };
     },
-    async reset(email) { await gotrue('recover', { email }); },
+    async reset(email, captchaToken) { await gotrue('recover', { email, ...captcha(captchaToken) }); },
     async signOut() { try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name: display_name.slice(0, 80) }, 'return=minimal'); },
