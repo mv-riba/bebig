@@ -64,6 +64,8 @@ export function AuthScreen() {
         {!(mode === 'reset' && remoteMode) && <Field label={mode === 'reset' ? 'New password' : 'Password'} hint={mode !== 'signin' ? '(at least 8 characters)' : undefined}>
           <input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={mode === 'signin' ? 1 : 8} value={pw} onChange={e => setPw(e.target.value)} />
         </Field>}
+        {mode === 'register' && <label className="consent"><input type="checkbox" required />
+          <span>I’m 18 or over, I agree to the <a href="/terms/" target="_blank" rel="noopener">Terms</a>, and I consent to Bebig storing my baby’s care records, which can include health information, as described in the <a href="/privacy/" target="_blank" rel="noopener">Privacy policy</a>.</span></label>}
         {err && <div className="alert error" role="alert">{err}</div>}
         {msg && <div className="alert ok" role="status">{msg}</div>}
         {needCaptcha && <Captcha action={mode === 'register' ? 'signup' : mode} resetSignal={captchaReset} onToken={setCaptchaToken} />}
