@@ -300,14 +300,14 @@ export function PrivacyPage({ onBack }: { onBack: () => void }) {
         <p><strong>Your baby’s records are sensitive.</strong> Bebig treats them as health-related personal data.</p>
         <ul>
           <li>Only people you invite and who accept can see a baby profile. Access is enforced by the database, not just the app.</li>
-          <li>Data is encrypted in transit (HTTPS) and at rest. We prefer EU hosting.</li>
+          <li>Data is encrypted in transit (HTTPS) and at rest, and stored in the EU.</li>
           <li>Records are never shared with advertising networks and never sold.</li>
           <li>The AI assistant only reads records for the selected baby, and only for people with access.</li>
           <li>Records are not used to train third-party AI models.</li>
-          <li>You can export or delete your data at any time (Settings → Data).</li>
+          <li>You can export or delete your data at any time (Settings → Data export &amp; deletion, and Settings → Account).</li>
         </ul>
         <p className="muted small">{syncMode() === 'local' ? 'You’re in local mode: everything stays in this browser on this device. Clearing browser data removes it.' : 'Cloud sync is on.'}</p>
-        <p className="muted small">The full privacy policy, lawful basis and retention periods will be published before public release (GDPR review pending).</p>
+        <p className="small"><a className="link" href="/privacy/" target="_blank" rel="noopener">Privacy policy</a> · <a className="link" href="/terms/" target="_blank" rel="noopener">Terms of use</a></p>
       </div>
       <label className="row card"><span className="row-main"><span className="row-title">Allow AI phrasing by our server-side model</span><span className="row-sub">Numbers are always calculated from your records. Off by default.</span></span><input type="checkbox" className="switch" checked={p.ai_consent} onChange={e => onAiConsent(e.target.checked)} /></label>
     </Page>
