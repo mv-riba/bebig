@@ -1,10 +1,34 @@
-# Weekly update PRs for npm packages and GitHub Actions (each one runs the tests before you merge).
+# Dependabot: one grouped PR per week for each ecosystem, minor and patch updates only.
+# Major versions (e.g. TypeScript 7) are skipped; upgrade those deliberately.
+# Security fixes still arrive as their own PRs whenever an alert is raised.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
-    schedule: { interval: weekly }
-    open-pull-requests-limit: 5
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 2
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Helsinki
+    open-pull-requests-limit: 2
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
