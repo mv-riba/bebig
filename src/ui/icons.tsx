@@ -39,6 +39,7 @@ export const IExport = (p: P) => <S {...p}><path d="M12 15V3.5M7.5 8 12 3.5 16.5
 export const IShield = (p: P) => <S {...p}><path d="M12 3 5 6v5.5c0 4.3 3 7.7 7 9.5 4-1.8 7-5.2 7-9.5V6z" /><path d="m9 12 2 2 4-4" /></S>;
 export const ISliders = (p: P) => <S {...p}><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></S>;
 export const IEdit = (p: P) => <S {...p}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></S>;
+export const ISignOut = (p: P) => <S {...p}><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14" /><path d="M10 8l-4 4 4 4M6 12h9.5" /></S>;
 export const ITrash = (p: P) => <S {...p}><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13" /></S>;
 export const IRuler = (p: P) => <S {...p}><rect x="2.5" y="8" width="19" height="8" rx="1.5" /><path d="M6.5 8v3M10 8v4M13.5 8v3M17 8v4" /></S>;
 export const IScale = (p: P) => <S {...p}><rect x="3.5" y="4" width="17" height="16" rx="4" /><path d="M8.5 10a5 5 0 0 1 7 0l-2.5 2.5" /></S>;

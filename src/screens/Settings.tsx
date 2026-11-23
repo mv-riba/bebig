@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useBaby } from '../ui/hooks';
 import { useNav, Route } from '../ui/nav';
 import { Page, Row, Field, Segmented, useToast, Chip, useConfirm } from '../ui/ui';
-import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, IEdit, IBell, ICrown } from '../ui/icons';
+import { IChevron, IBottle, IUsers, IChart, IExport, ISliders, IShield, ITrash, IEdit, IBell, ICrown, ISignOut } from '../ui/icons';
 import { BabyAvatar } from './Home';
 import {
   useStore, updateBaby, inviteCaregiver, revokeAccess, setRole, updatePrefs, exportBaby, deleteBabyData, signOut, updateAccount,
@@ -26,6 +26,7 @@ export function Settings() {
   const babies = useStore(s => accessibleBabies(s));
   const me = useStore(s => s.users[currentUserId() ?? '']);
   const plus = usePlus(); const [switching, setSwitching] = useState(false);
+  const onSignOut = useSignOut();
   if (!ctx || !plus) return null;
   const { baby, prefs } = ctx;
   const go = (r: Route) => () => nav.push(r);
@@ -65,6 +66,9 @@ export function Settings() {
         <Row icon={<IEdit />} title="Account" sub={me?.email} onClick={go({ name: 'account' })} right={<IChevron />} />
       </div>
       {syncMode() === 'remote' && <SyncRow />}
+      <div className="card list">
+        <Row icon={<ISignOut />} title="Sign out" sub={me?.email ? `Signed in as ${me.email}` : undefined} onClick={onSignOut} />
+      </div>
       <p className="muted tiny center">Bebig {config.version} · {syncMode() === 'local' ? 'Local mode: data is stored on this device only' : 'Cloud sync on'}</p>
       <p className="muted tiny center"><a className="link" href="https://bebig.mvriba.com/" target="_blank" rel="noopener">Discover more about Bebig</a></p>
     </div>
@@ -314,15 +318,25 @@ export function PrivacyPage({ onBack }: { onBack: () => void }) {
   );
 }
 
+// Shared by the Settings screen and the Account page: warns before unsynced changes would be lost.
+function useSignOut() {
+  const confirm = useConfirm();
+  return async () => {
+    const n = unsyncedCount();
+    if (!n || await confirm({ title: 'Sign out?', text: `${n} change${n > 1 ? 's haven’t' : ' hasn’t'} synced yet and would be lost. Try Settings → Sync now first.`, ok: 'Sign out anyway', danger: true })) signOut();
+  };
+}
+
 export function AccountPage({ onBack }: { onBack: () => void }) {
   const me = useStore(s => s.users[currentUserId() ?? '']); const toast = useToast(); const confirm = useConfirm();
+  const onSignOut = useSignOut();
   const [name, setName] = useState(me?.display_name ?? '');
   if (!me) return null;
   return (
     <Page title="Account" onBack={onBack}>
       <Field label="Your name"><input value={name} maxLength={80} onChange={e => setName(e.target.value)} onBlur={() => { if (name.trim() && name !== me.display_name) { updateAccount({ display_name: name.trim() }); toast('Name updated'); } }} /></Field>
       <Field label="Email"><input value={me.email} disabled /></Field>
-      <button className="btn soft block" onClick={async () => { const n = unsyncedCount(); if (!n || await confirm({ title: 'Sign out?', text: `${n} change${n > 1 ? 's haven’t' : ' hasn’t'} synced yet and would be lost. Try Settings → Sync now first.`, ok: 'Sign out anyway', danger: true })) signOut(); }}>Sign out</button>
+      <button className="btn soft block" onClick={onSignOut}>Sign out</button>
       <button className="btn danger block" onClick={async () => { if (await confirm({ title: 'Delete your account?', text: 'Baby profiles you own will also be deleted for everyone.', ok: 'Delete account', danger: true, typeWord: 'DELETE' })) { try { await deleteAccount(); } catch (e: any) { toast(e.message || 'Couldn’t delete the account. Check your connection and try again.'); } } }}>Delete account</button>
     </Page>
   );
@@ -331,7 +345,6 @@ export function AccountPage({ onBack }: { onBack: () => void }) {
 function SyncRow() {
   const last = useStore(s => s.lastSyncedAt);
   const pending = useStore(s => s.outbox.length + (s.syncFailed?.length ?? 0));
-  const me = useStore(s => s.users[currentUserId() ?? '']);
   const [err, setErr] = useState<string | null>(null); const [busy, setBusy] = useState(false);
   const toast = useToast();
   const run = async () => { setBusy(true); await syncNow(); const e = await syncStatus(); setErr(e); setBusy(false); toast(e ? 'Sync problem: ' + e : 'Synced'); };
@@ -340,7 +353,7 @@ function SyncRow() {
   const copy = async () => { try { await navigator.clipboard.writeText(diag || ''); toast('Copied — paste it to Claude'); } catch { toast('Couldn’t copy — take a screenshot instead'); } };
   return (
     <div className="card list">
-      <Row title="Sync" sub={<>{last ? `Last synced ${formatAgo(last)}` : 'Not synced yet'}{pending ? ` · ${pending} change${pending > 1 ? 's' : ''} waiting` : ''}<br />Signed in as {me?.email}{err ? <><br /><span className="field-error">{err}</span></> : null}</>}
+      <Row title="Sync" sub={<>{last ? `Last synced ${formatAgo(last)}` : 'Not synced yet'}{pending ? ` · ${pending} change${pending > 1 ? 's' : ''} waiting` : ''}{err ? <><br /><span className="field-error">{err}</span></> : null}</>}
         right={<button className="btn soft small" disabled={busy} onClick={run}>{busy ? 'Syncing…' : 'Sync now'}</button>} />
       <button className="row tap" onClick={showDiag} disabled={busy}><span className="row-main"><span className="row-title">Sync diagnostics</span><span className="row-sub">Compare this device with the server</span></span></button>
       {diag && <div className="diag"><pre>{diag}</pre><button className="btn soft small" onClick={copy}>Copy</button></div>}
