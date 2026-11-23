@@ -356,3 +356,5 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .baby-pick .row-main { flex: 1; display: flex; flex-direction: column; }
 .pick-check { color: var(--accent-d); }
 .avatar-ph.paused { opacity: .5; }
+.captcha { min-height: 65px; }
+.captcha > div:first-child { width: 100%; }
