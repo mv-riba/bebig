@@ -47,3 +47,4 @@ footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 1
   main { border: 0; box-shadow: none; padding: 0; }
   footer nav { display: none; }
 }
+.nowrap { white-space: nowrap; }
