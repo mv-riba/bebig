@@ -74,6 +74,7 @@ export function AuthScreen() {
         {mode === 'reset' && <button type="button" className="link small center-block" onClick={() => setMode('signin')}>Back to sign in</button>}
         {syncMode() === 'local' && <p className="muted tiny center">Local mode — accounts and records stay in this browser. {mode === 'reset' ? 'In the live app, a reset link is emailed instead.' : ''}</p>}
       </form>
+      <p className="muted tiny center">Bebig is made by MVR Studios · <span className="nowrap">Business ID 3485332-7</span><br /><a className="link" href="/privacy/" target="_blank" rel="noopener">Privacy</a> · <a className="link" href="/terms/" target="_blank" rel="noopener">Terms</a> · <a className="link" href="mailto:support@bebig.app">support@bebig.app</a></p>
       <Wave tone="lav" />
     </div>
   );

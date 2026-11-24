@@ -22,11 +22,14 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 fs.cpSync('public', out, { recursive: true });
 // PNG app icons are rendered from public/icon.svg at build time (keeps the repo text-only)
-for (const size of [192, 512]) {
-  const dest = path.join(out, `icon-${size}.png`);
+// "any" icons come from icon.svg; "maskable" ones (Android adaptive icons, the Play app's launcher icon)
+// from icon-maskable.svg, which keeps the artwork inside the safe zone so no launcher mask crops it
+const icons = [['icon', 'public/icon.svg'], ['icon-maskable', 'public/icon-maskable.svg']];
+for (const [name, src] of icons) for (const size of [192, 512]) {
+  const dest = path.join(out, `${name}-${size}.png`);
   if (fs.existsSync(dest)) continue;
-  try { const sharp = require('sharp'); await sharp(fs.readFileSync('public/icon.svg')).resize(size, size).png().toFile(dest); }
-  catch { console.warn(`(icon-${size}.png not generated: install sharp)`); }
+  try { const sharp = require('sharp'); await sharp(fs.readFileSync(src)).resize(size, size).png().toFile(dest); }
+  catch { console.warn(`(${name}-${size}.png not generated: install sharp)`); }
 }
 
 const opts = {
@@ -49,7 +52,7 @@ function writeHtml(meta) {
     .replaceAll('__CAPTCHA_SRC__', turnstileSiteKey ? 'https://challenges.cloudflare.com' : '');
   fs.writeFileSync(path.join(out, 'index.html'), html);
   // service worker precache list + versioned cache name
-  const sw = fs.readFileSync(path.join(out, 'sw.js'), 'utf8').replace('__VERSION__', version + '-' + Date.now()).replace('__ASSETS__', JSON.stringify(['/', '/index.html', `/${js}`, css && `/${css}`, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'].filter(Boolean)));
+  const sw = fs.readFileSync(path.join(out, 'sw.js'), 'utf8').replace('__VERSION__', version + '-' + Date.now()).replace('__ASSETS__', JSON.stringify(['/', '/index.html', `/${js}`, css && `/${css}`, '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/icon-maskable-192.png', '/icon-maskable-512.png'].filter(Boolean)));
   fs.writeFileSync(path.join(out, 'sw.js'), sw);
 }
 

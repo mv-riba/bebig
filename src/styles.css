@@ -364,3 +364,4 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: var(--ink-2); margin: 4px 0 12px; }
 .consent input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--accent-d); }
 .consent a { color: var(--accent-d); font-weight: 700; }
+.nowrap { white-space: nowrap; }

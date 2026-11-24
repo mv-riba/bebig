@@ -1,0 +1,129 @@
+name: Android build
+
+# Builds the Play Store app (a Trusted Web Activity around bebig.app) with Bubblewrap.
+# - Run it by hand (Actions → Android build → Run workflow) to get a signed .aab for Play Console.
+# - Pull requests that touch the Android config get a test build, signed with a throwaway key.
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name shown on Google Play, e.g. 1.0.0'
+        required: true
+        default: '1.0.0'
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'public/manifest.webmanifest'
+      - 'public/icon*.svg'
+      - 'build.mjs'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUBBLEWRAP_VERSION: 1.25.0 # targets Android API 36
+  MIN_TARGET_SDK: 36 # Google Play requirement for new apps since 31 Aug 2026
+
+jobs:
+  aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Build the site so the app icons come from this commit (they may not be on bebig.app yet),
+      # and serve them locally for Bubblewrap to download.
+      - run: npm ci
+      - run: npm run build
+      - name: Serve icons
+        run: |
+          (cd dist && python3 -m http.server 8765 >/dev/null 2>&1 &)
+          sleep 2 && curl -fsS -o /dev/null http://localhost:8765/icon-maskable-512.png
+
+      - name: Configure Bubblewrap
+        run: |
+          npm install -g "@bubblewrap/cli@${BUBBLEWRAP_VERSION}"
+          # Bubblewrap still looks for the legacy SDK "tools" folder; point it at the current command-line tools
+          ls "$ANDROID_HOME" "$ANDROID_HOME/build-tools"
+          [ -e "$ANDROID_HOME/tools" ] || ln -s "$ANDROID_HOME/cmdline-tools/latest" "$ANDROID_HOME/tools"
+          mkdir -p ~/.bubblewrap
+          echo "{\"jdkPath\":\"${JAVA_HOME_17_X64}\",\"androidSdkPath\":\"${ANDROID_HOME}\"}" > ~/.bubblewrap/config.json
+          cat ~/.bubblewrap/config.json
+
+      - name: Set version and local icon URLs
+        working-directory: android
+        env:
+          VERSION_NAME: ${{ inputs.version_name || '0.0.0-test' }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          jq --arg v "$VERSION_NAME" --argjson c "$VERSION_CODE" \
+            '.appVersionName = $v | .appVersion = $v | .appVersionCode = $c
+             | .iconUrl = "http://localhost:8765/icon-512.png"
+             | .maskableIconUrl = "http://localhost:8765/icon-maskable-512.png"' \
+            twa-manifest.json > twa.tmp && mv twa.tmp twa-manifest.json
+          jq '{packageId, host, appVersionName, appVersionCode}' twa-manifest.json
+
+      - name: Upload key
+        working-directory: android
+        env:
+          KEYSTORE_BASE64: ${{ github.event_name == 'workflow_dispatch' && secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 || '' }}
+          KEYSTORE_PASSWORD: ${{ github.event_name == 'workflow_dispatch' && secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD || '' }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > upload.keystore
+            pw="$KEYSTORE_PASSWORD"
+            echo "ARTIFACT_SUFFIX=" >> "$GITHUB_ENV"
+            echo "Signing with the upload key"
+          else
+            pw=$(openssl rand -hex 24)
+            echo "::add-mask::$pw"
+            keytool -genkeypair -keystore upload.keystore -storetype PKCS12 -alias upload -keyalg RSA -keysize 2048 \
+              -validity 365 -storepass "$pw" -keypass "$pw" -dname "CN=Bebig test build" 2>/dev/null
+            echo "ARTIFACT_SUFFIX=-TEST-UNSIGNABLE" >> "$GITHUB_ENV"
+            echo "::warning::No upload key (secrets missing, or not a manual run) — signed with a throwaway key. Don't upload this build to Play."
+          fi
+          echo "BUBBLEWRAP_KEYSTORE_PASSWORD=$pw" >> "$GITHUB_ENV"
+          echo "BUBBLEWRAP_KEY_PASSWORD=$pw" >> "$GITHUB_ENV"
+          echo "Signing certificate:" && keytool -list -v -keystore upload.keystore -storepass "$pw" 2>/dev/null | grep 'SHA256:'
+
+      - name: Generate Android project
+        working-directory: android
+        run: yes | bubblewrap update --skipVersionUpgrade
+
+      - name: Check target API
+        working-directory: android
+        run: |
+          grep -nE 'compileSdkVersion|targetSdkVersion|minSdkVersion|versionCode|versionName|applicationId' app/build.gradle
+          target=$(grep -oE 'targetSdkVersion[ =]+[0-9]+' app/build.gradle | grep -oE '[0-9]+$')
+          [ "$target" -ge "$MIN_TARGET_SDK" ] || { echo "::error::targetSdkVersion $target < $MIN_TARGET_SDK"; exit 1; }
+
+      - name: Build
+        working-directory: android
+        run: yes | bubblewrap build --skipPwaValidation
+
+      - name: Collect outputs
+        working-directory: android
+        env:
+          VERSION_NAME: ${{ inputs.version_name || '0.0.0-test' }}
+        run: |
+          mkdir -p ../out
+          cp app-release-bundle.aab "../out/bebig-${VERSION_NAME}-${{ github.run_number }}${ARTIFACT_SUFFIX}.aab"
+          cp app-release-signed.apk "../out/bebig-${VERSION_NAME}-${{ github.run_number }}${ARTIFACT_SUFFIX}.apk"
+          rm -f upload.keystore
+          ls -la ../out
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bebig-android-${{ github.run_number }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30

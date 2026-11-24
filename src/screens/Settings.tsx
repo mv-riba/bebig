@@ -67,6 +67,7 @@ export function Settings() {
       {syncMode() === 'remote' && <SyncRow />}
       <p className="muted tiny center">Bebig {config.version} · {syncMode() === 'local' ? 'Local mode: data is stored on this device only' : 'Cloud sync on'}</p>
       <p className="muted tiny center"><a className="link" href="https://bebig.mvriba.com/" target="_blank" rel="noopener">Discover more about Bebig</a></p>
+      <p className="muted tiny center">Bebig is made by MVR Studios · <span className="nowrap">Business ID 3485332-7</span></p>
     </div>
   );
 }

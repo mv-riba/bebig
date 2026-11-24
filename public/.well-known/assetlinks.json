@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.bebig",
+      "sha256_cert_fingerprints": [
+        "32:65:68:7F:C7:F2:9F:F2:A2:29:F8:13:90:3C:77:F7:22:C4:39:10:02:A4:BD:EC:09:40:3D:02:EC:A6:21:28"
+      ]
+    }
+  }
+]
