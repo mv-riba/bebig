@@ -23,8 +23,17 @@ const saveAuth = (s: AuthSession | null) => { auth = s; s ? localStorage.setItem
 async function gotrue(path: string, body: any) {
   const r = await fetch(`${URL_}/auth/v1/${path}`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Authentication failed');
+  if (!r.ok) throw new Error(weakPasswordMessage(j) || j.error_description || j.msg || j.message || 'Authentication failed');
   return j;
+}
+// Supabase's own weak-password text lists every allowed character; show a short, friendly line instead.
+export function weakPasswordMessage(j: any): string | null {
+  if (j?.error_code !== 'weak_password' && j?.code !== 'weak_password') return null;
+  const reasons: string[] = j.weak_password?.reasons || [];
+  if (reasons.includes('pwned')) return 'This password has appeared in a data leak. Please choose a different one.';
+  if (reasons.includes('characters')) return 'Please use a stronger password: mix upper and lower case letters, a number and a symbol (like ! or ?).';
+  if (reasons.includes('length')) return 'Password must be at least 8 characters.';
+  return 'Please choose a stronger password.';
 }
 // CAPTCHA token for sign-up, sign-in and password reset; Supabase Auth verifies it with Turnstile (single use)
 const captcha = (t?: string) => t ? { gotrue_meta_security: { captcha_token: t } } : {};
