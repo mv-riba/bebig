@@ -52,6 +52,9 @@ jobs:
       - name: Configure Bubblewrap
         run: |
           npm install -g "@bubblewrap/cli@${BUBBLEWRAP_VERSION}"
+          # Bubblewrap still looks for the legacy SDK "tools" folder; point it at the current command-line tools
+          ls "$ANDROID_HOME" "$ANDROID_HOME/build-tools"
+          [ -e "$ANDROID_HOME/tools" ] || ln -s "$ANDROID_HOME/cmdline-tools/latest" "$ANDROID_HOME/tools"
           mkdir -p ~/.bubblewrap
           echo "{\"jdkPath\":\"${JAVA_HOME_17_X64}\",\"androidSdkPath\":\"${ANDROID_HOME}\"}" > ~/.bubblewrap/config.json
           cat ~/.bubblewrap/config.json
