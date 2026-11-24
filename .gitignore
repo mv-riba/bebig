@@ -11,4 +11,5 @@ public/icon-*.png
 android/*
 !android/twa-manifest.json
 !android/README.md
+!android/patch_launcher.py
 *.keystore

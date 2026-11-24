@@ -8,6 +8,7 @@ Android target API change.
 - `twa-manifest.json` — the wrapper's config. **`packageId` (`app.bebig`) is permanent once published.**
 - The Android project itself is generated in CI from this file (it isn't committed).
 - `iconUrl` is `icon-splash-512.png`: Bubblewrap uses it for the launch screen. It copies Android 12's own launch screen (the round launcher icon, 160 dp of Bubblewrap's 300 dp splash image, on the app's pale background), so the two read as one screen. The launcher icon comes from `maskableIconUrl`.
+- `patch_launcher.py` runs after the project is generated and adds the Chrome 152+ splash workaround to `LauncherActivity` (see the file for why). Remove it once Chrome or androidbrowserhelper fixes [#623](https://github.com/GoogleChrome/android-browser-helper/issues/623).
 - Targets API 36; runs on Android 7.0+ (`minSdkVersion` 24, required by Google's androidbrowserhelper library).
 
 ## Building

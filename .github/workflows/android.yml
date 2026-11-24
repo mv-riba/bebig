@@ -99,6 +99,10 @@ jobs:
         working-directory: android
         run: yes | bubblewrap update --skipVersionUpgrade
 
+      - name: Chrome 152 splash workaround
+        working-directory: android
+        run: python3 patch_launcher.py
+
       - name: Check target API
         working-directory: android
         run: |
