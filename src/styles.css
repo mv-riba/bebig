@@ -142,6 +142,7 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .sum-poo { background: var(--peach-l); } .sum-poo .sum-ic { color: var(--peach-d); }
 .sum-sleep { background: var(--lav-l); } .sum-sleep .sum-ic { color: var(--lav-d); }
 .sum-sleep.is-active { background: linear-gradient(160deg, var(--lav-l), var(--lav)); }
+.sum-feed.is-active { background: linear-gradient(160deg, var(--sage-xl), var(--sage-l)); } .sum-feed.is-active .pulse { background: var(--sage-d); }
 .sum-ic { margin-bottom: 4px; } .sum-label { font-size: .92rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
 .sum-time { font-size: 1.35rem; font-weight: 800; letter-spacing: -.02em; } .sum-ago { font-size: .78rem; color: var(--muted); }
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--lav-d); animation: pulse 1.6s infinite; }

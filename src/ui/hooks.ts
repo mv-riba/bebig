@@ -1,4 +1,4 @@
-import { useStore, selectedBaby, live, myPrefs, roleFor, activeSleep, currentUserId } from '../lib/store';
+import { useStore, selectedBaby, live, myPrefs, roleFor, activeSleep, feedTimerOf, currentUserId } from '../lib/store';
 import type { Data } from '../lib/calc';
 import { withBirth } from '../lib/growth';
 import type { GrowthMeasurement, UserPrefs, BabyProfile, Role, SleepEntry, FeedTimer, TrackerDef, ExtraEntry } from '../lib/types';
@@ -16,7 +16,7 @@ export function useBaby(): BabyCtx | null {
       trackers: live(s.trackers, id).filter(t => t.enabled).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)),
       extras: live(s.extras, id),
       growth: withBirth(baby, live(s.growth, id)), prefs: myPrefs(s), role: roleFor(id) ?? 'caregiver',
-      active: activeSleep(id, s), feedTimer: s.feedTimers[id] ?? null,
+      active: activeSleep(id, s), feedTimer: feedTimerOf(id, s),
     };
   });
 }

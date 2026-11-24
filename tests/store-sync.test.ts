@@ -54,7 +54,7 @@ test('deleting a baby drops its queued changes, so they are not refused and retr
   const left = store.getState().outbox.filter(o => o.row.baby_id === b2);
   assert.equal(left.length, 1);
   assert.ok(left[0].table === 'babies' && left[0].row.deleted_at);
-  assert.equal(Object.values(store.getState().extraTimers).some(t => t.baby_id === b2), false);
+  assert.equal(Object.values(store.getState().timers).some(t => t.baby_id === b2), false);
 });
 
 test('a caregiver can leave; the owner cannot', async () => {

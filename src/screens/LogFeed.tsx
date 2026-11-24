@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, feedTimerTotals, getState } from '../lib/store';
-import { toLocalInput, fromLocalInput, formatClock, dayStart, zonedParts } from '../lib/time';
+import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState } from '../lib/store';
+import { toLocalInput, fromLocalInput, formatClock, formatTime, dayStart, zonedParts } from '../lib/time';
 import type { FeedingEntry, FeedingType } from '../lib/types';
 import { MAX_FEED_SECONDS } from '../lib/validate';
 
@@ -78,8 +78,9 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
           if (end) { const e = fromLocalInput(end, tz); if (new Date(e) <= new Date(s)) throw new Error('End time must be after the start time.'); row.end_datetime = e; } else row.end_datetime = null;
         }
       }
-      const id = upsertEntry('feeds', row);
-      if (fromTimer) discardFeedTimer(baby.baby_id);
+      // from the timer: saved together with the Stop, so two caregivers stopping it can't save the feed twice
+      const id = fromTimer ? stopFeedTimer(baby.baby_id, row) : upsertEntry('feeds', row);
+      if (!id) throw new Error('This timer has already been stopped.');
       toast(existing ? 'Feed updated' : 'Feed saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('feeds', id) });
       onDone();
     } catch (e: any) { setErr(e.message); }
@@ -111,6 +112,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
             <>
               <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
               <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
+              {timerStartedBy(timer) && <div className="muted small">Started by {timerStartedBy(timer)} · {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>}
               <Segmented label="Breast side" value={timer.side} onChange={v => switchFeedSide(baby.baby_id, v)} options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]} />
               <div className="btn-row">
                 {timer.segment_started_at

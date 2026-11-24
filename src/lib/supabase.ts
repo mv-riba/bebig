@@ -1,12 +1,14 @@
 // Remote backend: Supabase (GoTrue auth + PostgREST), dependency-free fetch client.
 // - Pushes the local outbox with idempotent upserts keyed by client UUIDs (no duplicates on retry).
 // - Pulls changes by server_updated_at cursor (server clock, so late offline edits are never missed).
-// - Polls every 15 s and on focus/online; Supabase Realtime signals sleep changes so other caregivers see them within seconds.
-// - Sleep-timer taps (start/pause/resume/stop/discard) are sent as actions to database functions, which apply them
-//   in order: the first Stop wins and a finished sleep can't be reopened by a phone that hadn't seen it yet.
+// - Polls every 15 s and on focus/online; Supabase Realtime signals sleep and timer changes so other caregivers see
+//   them within seconds.
+// - Timer taps (sleep, breastfeeding, extras: start/pause/resume/side/stop/discard) are sent as actions to database
+//   functions, which apply them in order: the first Stop wins and a finished timer can't be reopened by a phone that
+//   hadn't seen it yet.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, type Table, type OutboxOp, type SleepResult } from './store';
+import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, applyTimerResult, pruneFinishedTimers, type Table, type OutboxOp, type SleepResult, type TimerResult } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
 
@@ -88,6 +90,7 @@ const REMOTE: Record<Table, { table: string; id: string }> = {
   feeds: { table: 'feeding_entries', id: 'feed_id' }, poos: { table: 'poo_entries', id: 'poo_id' },
   sleeps: { table: 'sleep_entries', id: 'sleep_id' }, growth: { table: 'growth_measurements', id: 'measurement_id' },
   trackers: { table: 'extra_trackers', id: 'tracker_id' }, extras: { table: 'extra_entries', id: 'extra_id' },
+  timers: { table: 'running_timers', id: 'timer_id' }, // read here; changed only through the timer_* actions
 };
 const COLUMNS: Record<Table, string[]> = {
   babies: ['baby_id', 'name', 'date_of_birth', 'time_of_birth', 'sex', 'gestational_age_weeks', 'gestational_age_days', 'timezone', 'photograph_url', 'feeding_preference', 'wet_tracking', 'birth_weight_grams', 'birth_length_mm', 'birth_head_circumference_mm', 'created_by', 'created_at', 'updated_at'],
@@ -98,6 +101,7 @@ const COLUMNS: Record<Table, string[]> = {
   growth: ['measurement_id', 'baby_id', 'measurement_date', 'weight_grams', 'length_mm', 'head_circumference_mm', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   trackers: ['tracker_id', 'baby_id', 'name', 'icon', 'kind', 'unit', 'preset', 'enabled', 'sort', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   extras: ['extra_id', 'baby_id', 'tracker_id', 'datetime', 'duration_seconds', 'value_num', 'level', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
+  timers: [],
 };
 const pick = (t: Table, row: any) => { const o: any = Object.fromEntries(COLUMNS[t].filter(c => c in row).map(c => [c, row[c] ?? null])); if (t === 'poos' && !o.nappy_type) o.nappy_type = 'poo'; if (t === 'babies' && o.wet_tracking == null) o.wet_tracking = false; return o; };
 
@@ -111,6 +115,22 @@ async function pushSleepAction(op: OutboxOp): Promise<boolean> {
   try { applySleepResult(op, await rest('POST', `rpc/sleep_${a.kind}`, args) as SleepResult); return true; }
   catch (e: any) { if (e.status === 404 && e.code === 'PGRST202') return false; throw e; }
 }
+/** Sends a breastfeeding / extras timer tap to its database function. Before migration 0008 (no functions yet), or
+ *  for a timer the server never got, the tap is dropped: the timer then just stays on this device, as it used to. */
+async function pushTimerAction(op: OutboxOp) {
+  const a = op.action!; const r = op.row;
+  const args = a.kind === 'start' ? { p_timer_id: r.timer_id, p_baby_id: r.baby_id, p_kind: r.kind, p_tracker_id: r.tracker_id ?? null, p_side: a.side ?? null, p_at: a.at }
+    : a.kind === 'discard' ? { p_timer_id: r.timer_id }
+    : a.kind === 'stop' ? { p_timer_id: r.timer_id, p_at: a.at, p_entry_id: a.entry_id }
+    : a.kind === 'side' ? { p_timer_id: r.timer_id, p_side: a.side ?? null, p_at: a.at }
+    : { p_timer_id: r.timer_id, p_at: a.at };
+  try { applyTimerResult(op, await rest('POST', `rpc/timer_${a.kind}`, args) as TimerResult); }
+  catch (e: any) {
+    if ((e.status === 404 && e.code === 'PGRST202') || (a.kind !== 'start' && e.message === 'timer_not_found')) {
+      setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); }, false);
+    } else throw e;
+  }
+}
 let pushing = false;
 async function push() {
   if (pushing || !auth || !navigator.onLine) return; pushing = true;
@@ -119,7 +139,8 @@ async function push() {
       const op = getState().outbox[0]; if (!op) break;
       const { table, id } = REMOTE[op.table]; const me = currentUserId(); const row = op.row;
       try {
-        if (op.table === 'sleeps' && op.action && await pushSleepAction(op)) { /* applied, and the server's copy taken */ }
+        if (op.table === 'timers') { if (op.action) await pushTimerAction(op); /* timers are never uploaded as rows */ }
+        else if (op.table === 'sleeps' && op.action && await pushSleepAction(op)) { /* applied, and the server's copy taken */ }
         else if (op.table === 'babies' && row.deleted_at) await rest('DELETE', `${table}?baby_id=eq.${row.baby_id}`);
         else if (op.table === 'access') {
           if (row.role === 'owner') { /* created by trigger on the server */ }
@@ -166,6 +187,7 @@ async function pull() {
     catch (e: any) {
       // one table failing (e.g. a database update not applied yet) must not stop everything else syncing
       if (e.status === 401 || !navigator.onLine) throw e;
+      if (t === 'timers' && e.status === 404) continue; // migration 0008 not applied yet: timers stay on each device
       tableErrors[t] = e.message; continue;
     }
     delete tableErrors[t];
@@ -203,12 +225,13 @@ async function pull() {
     // remove babies we can no longer see (revoked / deleted elsewhere)
     // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
     for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) forgetBabyLocally(s, id, me);
+    pruneFinishedTimers(s);
     s.lastSyncedAt = new Date().toISOString();
   }, false);
 }
 
 // ---------- realtime ----------
-// Supabase Realtime (Phoenix websocket protocol) is used only as a "a sleep changed" signal: it triggers a normal
+// Supabase Realtime (Phoenix websocket protocol) is used only as a "a sleep or timer changed" signal: it triggers a normal
 // sync, so row-level security, merging and cursors stay in one place. Polling every 15 s remains the fallback.
 let ws: WebSocket | null = null; let wsRef = 0; let wsBeat: any = null; let wsRetry = 0; let wsToken = '';
 let pokeTimer: any = null;
@@ -217,16 +240,17 @@ function startRealtime() {
   if (ws || !auth || typeof WebSocket === 'undefined' || !navigator.onLine) return;
   const sock = new WebSocket(`${URL_.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${encodeURIComponent(KEY)}&vsn=1.0.0`);
   ws = sock;
-  const topic = 'realtime:bebig-sleeps';
+  // one channel per table, so a table that isn't there yet (before migration 0008) can't stop the other
+  const topics: [string, string][] = [['realtime:bebig-sleeps', 'sleep_entries'], ['realtime:bebig-timers', 'running_timers']];
   const send = (t: string, event: string, payload: any) => { if (sock.readyState === 1) sock.send(JSON.stringify({ topic: t, event, payload, ref: String(++wsRef) })); };
   sock.onopen = async () => {
     wsToken = await token().catch(() => '');
     if (!wsToken) return sock.close();
-    send(topic, 'phx_join', { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'sleep_entries' }] }, access_token: wsToken });
+    for (const [topic, table] of topics) send(topic, 'phx_join', { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table }] }, access_token: wsToken });
     wsBeat = setInterval(async () => {
       send('phoenix', 'heartbeat', {});
       const t = await token().catch(() => ''); // keep the channel's sign-in fresh
-      if (t && t !== wsToken) { wsToken = t; send(topic, 'access_token', { access_token: t }); }
+      if (t && t !== wsToken) { wsToken = t; for (const [topic] of topics) send(topic, 'access_token', { access_token: t }); }
     }, 25000);
   };
   sock.onmessage = m => {
@@ -340,7 +364,7 @@ export function startRemoteSync() {
   const kick = () => cycle();
   window.addEventListener('online', () => { kick(); startRealtime(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { kick(); startRealtime(); } });
-  // sleep-timer taps go out straight away (and the result comes back), not on the next tick
+  // timer taps go out straight away (and the result comes back), not on the next tick
   let lastTap: string | undefined;
   subscribe(() => {
     const ob = getState().outbox; let tap: string | undefined; // only a new tap triggers this, so failures can't loop

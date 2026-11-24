@@ -30,7 +30,7 @@ Times are stored in UTC; the baby’s IANA time zone controls display and daily 
 
 ## Going live (GitHub Pages + your domain + Supabase)
 
-1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0008 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`; after 0006, `0006_entitlements.test.sql`; after 0007, `0007_limits.test.sql`; after 0008, `0008_sleep_actions.test.sql` — each on a fresh database). In Auth → URL configuration, set the site URL to your domain.
+1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0008 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`; after 0006, `0006_entitlements.test.sql`; after 0007, `0007_limits.test.sql`; after 0008, `0008_sleep_actions.test.sql` and `0008_timers.test.sql` — each on a fresh database). In Auth → URL configuration, set the site URL to your domain.
 2. **Config**: `bebig.config.json` holds the Supabase URL, the public anon key and the custom domain (env vars `BEBIG_SUPABASE_URL` / `BEBIG_SUPABASE_ANON_KEY` override). In GitHub *Settings → Pages* choose “GitHub Actions” and set the custom domain.
 3. **DNS**: for a subdomain add a `CNAME` record → `<github-user>.github.io`. For an apex domain add `A` records to GitHub Pages’ IPs. Then tick “Enforce HTTPS”.
 4. Optional AI phrasing: `supabase functions deploy assistant` and `supabase secrets set ANTHROPIC_API_KEY=…`.
@@ -56,5 +56,6 @@ Logging, partner sync, health notices, growth charts, summaries, 7-day trends, h
 - Baby photos are stored as a small re-encoded JPEG on the profile row; move to Supabase Storage (private bucket) for scale.
 - Cross-device sync: a sleep started, paused or stopped on one phone shows on the others within seconds (Supabase Realtime triggers a sync); everything else syncs every 15 s and on focus.
 - Sleep timer taps are applied on the server in order (migration 0008): when two caregivers stop the same sleep, the first Stop sets the end time and the other is told who stopped it (with a one-tap "Use my time"); a phone that hadn't seen the stop can't reopen it; two timers started at once become one.
+- Breastfeeding and extras timers are shared too (migration 0008, table `running_timers`): every caregiver sees a running timer (Home shows a running feed timer on the Feed card) and can pause, switch side, stop or discard it. The same rules apply: the first Stop saves the entry and a second Stop doesn't save it twice.
 - Breastfeeding timer state is per device (the sleep timer syncs across devices).
 - Native iOS/Android store apps: the PWA installs to the home screen today; Expo/React Native can reuse `src/lib/*` unchanged.
