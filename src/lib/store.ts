@@ -567,8 +567,13 @@ function sleepNotice(op: OutboxOp, outcome: SleepResult['outcome'], row: SleepEn
   const by = row.updated_by && row.updated_by !== me ? (state.users[row.updated_by]?.display_name || 'Another caregiver') : null;
   const baby = state.babies[row.baby_id]; const tz = baby?.timezone || 'UTC'; const fmt = myPrefs().time_format;
   const at = (iso: string) => formatTime(iso, tz, fmt);
-  if (outcome === 'joined' && row.created_by !== me) {
-    return { text: `${state.users[row.created_by!]?.display_name || 'Another caregiver'} already started this sleep at ${at(row.start_datetime)}, so you’re both timing the same one.` };
+  if (outcome === 'joined') {
+    if (row.created_by === me) return null; // our own timer from another device
+    const who = state.users[row.created_by!]?.display_name || 'Another caregiver';
+    const keptMine = op.action && Math.abs(new Date(op.action.at).getTime() - new Date(row.start_datetime).getTime()) < 1000;
+    return { text: keptMine
+      ? `${who} had also started a sleep timer, so they’re now one sleep, from your start at ${at(row.start_datetime)}.`
+      : `${who} already started this sleep at ${at(row.start_datetime)}, so you’re both timing the same one.` };
   }
   if (!by) return null; // our own earlier tap (a retry or a double tap): nothing to tell
   if (outcome === 'already_stopped' && op.action?.kind === 'stop' && row.end_datetime) {

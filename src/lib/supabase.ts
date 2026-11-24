@@ -129,7 +129,15 @@ async function push() {
           // editing someone else's entry: plain update (insert policy requires created_by = me)
           const { created_by, created_at, ...patch } = pick(op.table, row) as any;
           await rest('PATCH', `${table}?${id}=eq.${row[id]}`, patch, 'return=minimal');
-        } else await rest('POST', `${table}?on_conflict=${id}`, pick(op.table, row), 'resolution=merge-duplicates,return=minimal');
+        } else {
+          try { await rest('POST', `${table}?on_conflict=${id}`, pick(op.table, row), 'resolution=merge-duplicates,return=minimal'); }
+          catch (e: any) {
+            // A timer started by an app version from before 0008, refused because another caregiver's timer is
+            // already running (only one per baby): join that one instead of staying "not synced" for ever.
+            const joinable = op.table === 'sleeps' && e.code === '23505' && row.status !== 'completed' && !row.deleted_at;
+            if (!(joinable && await pushSleepAction({ ...op, action: { kind: 'start', at: row.start_datetime } }))) throw e;
+          }
+        }
         setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); }, false);
       } catch (e: any) {
         if (e.status && e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 408 && e.status !== 429) {

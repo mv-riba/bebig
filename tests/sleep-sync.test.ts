@@ -89,6 +89,15 @@ test('two caregivers start at once: this device joins the running sleep and its 
   assert.match(notices[0].text, /^Alex already started this sleep at .*both timing the same one\.$/);
 });
 
+test('joining a timer that started later keeps this device\'s earlier start, and says so', () => {
+  clear(); notices.length = 0;
+  const mine = store.startSleep(baby);
+  const [start] = ops(mine);
+  const theirs = { sleep_id: 'their-later', baby_id: baby, start_datetime: start.action!.at, end_datetime: null, status: 'active', pauses: [], created_by: cg, updated_by: me };
+  store.applySleepResult(start, { outcome: 'joined', row: theirs });
+  assert.match(notices[0].text, /^Alex had also started a sleep timer, so they’re now one sleep, from your start at /);
+});
+
 test('our own retried Stop is not announced', () => {
   clear(); notices.length = 0;
   const id = store.startSleep(baby);

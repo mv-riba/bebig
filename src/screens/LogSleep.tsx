@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { syncNow } from '../lib/sync';
 import { Page, Segmented, Field, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IMoon } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
@@ -30,6 +31,8 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
   const [end, setEnd] = useState(toLocalInput(existing?.end_datetime ?? defaultTime(tz, onKey), tz));
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
+  // fetch the latest before anyone taps Start: another caregiver may have started a timer a moment ago
+  useEffect(() => { syncNow().catch(() => { /* offline: the timer still works and syncs later */ }); }, []);
   if (!ctx) return null;
   const { baby, active, prefs } = ctx;
   const editingActive = existing && existing.status !== 'completed';
