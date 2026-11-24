@@ -21,7 +21,7 @@ Without Supabase settings the app runs in **local mode**: accounts and records l
 |---|---|---|
 | UI | React 19 + TypeScript, bundled by esbuild | Installable PWA, service worker for offline use |
 | Data on device | Local-first store (`src/lib/store.ts`) | Instant saves, outbox for offline, client UUIDs make retries safe (no duplicate entries) |
-| Backend | Supabase (Postgres + Auth), dependency-free client (`src/lib/supabase.ts`) | Row-level security on every table, server-clock sync cursors, last-write-wins per row |
+| Backend | Supabase (Postgres + Auth), dependency-free client (`src/lib/supabase.ts`) | Row-level security on every table, server-clock sync cursors, last-write-wins per row (sleep-timer taps are server actions: first Stop wins) |
 | Calculations | `calc.ts`, `insights.ts`, `growth.ts` | Pure, deterministic, unit-tested. The assistant explains these numbers; it never makes them up |
 | Growth | WHO Child Growth Standards LMS tables 0–24 months (`src/data/who-lms.json`) | Weekly tables to 13 weeks, monthly after; corrected age below 37 weeks; ±2 SD values verified against WHO’s published tables in tests |
 | AI phrasing (optional) | Supabase Edge Function `assistant` | Only rephrases a verified answer; off unless the user consents; safety replies are never rephrased |
@@ -30,7 +30,7 @@ Times are stored in UTC; the baby’s IANA time zone controls display and daily 
 
 ## Going live (GitHub Pages + your domain + Supabase)
 
-1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0007 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`; after 0006, `0006_entitlements.test.sql`; after 0007, `0007_limits.test.sql` — each on a fresh database). In Auth → URL configuration, set the site URL to your domain.
+1. **Supabase**: create a project (choose an EU region), then run the files in `supabase/migrations/` in order, 0001 → 0008 (SQL editor or `supabase db push`). `supabase/tests/` has a local Postgres check of the security rules (`psql -f supabase-stub.sql` then the migrations, then `0005_hardening.test.sql`; after 0006, `0006_entitlements.test.sql`; after 0007, `0007_limits.test.sql`; after 0008, `0008_sleep_actions.test.sql` — each on a fresh database). In Auth → URL configuration, set the site URL to your domain.
 2. **Config**: `bebig.config.json` holds the Supabase URL, the public anon key and the custom domain (env vars `BEBIG_SUPABASE_URL` / `BEBIG_SUPABASE_ANON_KEY` override). In GitHub *Settings → Pages* choose “GitHub Actions” and set the custom domain.
 3. **DNS**: for a subdomain add a `CNAME` record → `<github-user>.github.io`. For an apex domain add `A` records to GitHub Pages’ IPs. Then tick “Enforce HTTPS”.
 4. Optional AI phrasing: `supabase functions deploy assistant` and `supabase secrets set ANTHROPIC_API_KEY=…`.
@@ -54,6 +54,7 @@ Logging, partner sync, health notices, growth charts, summaries, 7-day trends, h
 - GDPR: lawful basis, DPIA, privacy policy, retention policy, DPAs with Supabase/AI provider.
 - Invitation emails: invitations work in-app (invitee signs in with the invited email); sending an email needs an Edge Function + SMTP.
 - Baby photos are stored as a small re-encoded JPEG on the profile row; move to Supabase Storage (private bucket) for scale.
-- Cross-device sync is near-real-time (15 s polling + on focus); Supabase Realtime websockets are enabled in the schema for an upgrade.
+- Cross-device sync: a sleep started, paused or stopped on one phone shows on the others within seconds (Supabase Realtime triggers a sync); everything else syncs every 15 s and on focus.
+- Sleep timer taps are applied on the server in order (migration 0008): when two caregivers stop the same sleep, the first Stop sets the end time and the other is told who stopped it (with a one-tap "Use my time"); a phone that hadn't seen the stop can't reopen it; two timers started at once become one.
 - Breastfeeding timer state is per device (the sleep timer syncs across devices).
 - Native iOS/Android store apps: the PWA installs to the home screen today; Expo/React Native can reuse `src/lib/*` unchanged.

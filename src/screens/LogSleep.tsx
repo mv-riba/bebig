@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Page, Segmented, Field, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IMoon } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, sleepElapsed, getState, live } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, discardSleep, sleepElapsed, getState, live } from '../lib/store';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, formatDuration, dateKey } from '../lib/time';
 import type { SleepEntry } from '../lib/types';
 import { defaultTime } from './LogFeed';
@@ -74,7 +74,7 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
           <button className="btn soft" onClick={() => { const d = stopSleep(a); toast(`Sleep saved · ${formatDuration(d.duration_seconds || 0)}`); onDone(); }}><IStop size={16} /> Stop</button>
         </div>
         <p className="muted small center">Paused time doesn’t count as sleep. If baby woke properly, stop and start a new session — interruptions are kept as separate sleeps.</p>
-        <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this sleep timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) { deleteEntry('sleeps', a.sleep_id); onDone(); } }}>Discard timer</button>
+        <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this sleep timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) { discardSleep(a); onDone(); } }}>Discard timer</button>
       </div>
     );
   };

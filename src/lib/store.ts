@@ -10,9 +10,13 @@ import type {
   User, BabyProfile, BabyAccess, FeedingEntry, PooEntry, SleepEntry, GrowthMeasurement, FeedTimer, UserPrefs, Role, TrackerDef, ExtraEntry,
 } from './types';
 import type { PlusStatus } from './plans';
+import { formatTime } from './time';
 
 export type Table = 'feeds' | 'poos' | 'sleeps' | 'growth' | 'babies' | 'access' | 'trackers' | 'extras';
-export interface OutboxOp { op_id: string; table: Table; row: any; queued_at: string }
+/** A sleep-timer tap, sent to the server as an action (applied in order, first Stop wins) rather than as the whole row. */
+export type SleepActionKind = 'start' | 'stop' | 'pause' | 'resume' | 'discard';
+export interface SleepAction { kind: SleepActionKind; at: string }
+export interface OutboxOp { op_id: string; table: Table; row: any; queued_at: string; action?: SleepAction }
 export interface AuditEvent { at: string; user_id: string; action: string; detail?: string }
 interface LocalCredential { user_id: string; salt: string; hash: string }
 
@@ -262,9 +266,15 @@ export function pendingInvitesForMe(s: State = state): BabyAccess[] {
   return Object.values(s.access).filter(a => a.invitation_status === 'pending' && a.invited_email === u.email);
 }
 
-function queue(s: State, table: Table, row: any) {
-  s.outbox.push({ op_id: uuid(), table, row: structuredClone(row), queued_at: nowIso() });
+function queue(s: State, table: Table, row: any, action?: SleepAction) {
+  s.outbox.push({ op_id: uuid(), table, row: structuredClone(row), queued_at: nowIso(), ...(action ? { action } : {}) });
 }
+
+// ---------------- Notices (messages from sync for the person using the app, shown as toasts) ----------------
+export interface Notice { text: string; action?: { label: string; run: () => void } }
+const noticeListeners = new Set<(n: Notice) => void>();
+export function onNotice(fn: (n: Notice) => void) { noticeListeners.add(fn); return () => { noticeListeners.delete(fn); }; }
+const notify = (n: Notice) => noticeListeners.forEach(l => l(n));
 
 // ---------------- Baby profiles ----------------
 
@@ -420,7 +430,7 @@ export function setRole(access_id: string, role: Role) {
 type Kind = 'feeds' | 'poos' | 'sleeps' | 'growth' | 'trackers' | 'extras';
 const idField: Record<Kind, string> = { feeds: 'feed_id', poos: 'poo_id', sleeps: 'sleep_id', growth: 'measurement_id', trackers: 'tracker_id', extras: 'extra_id' };
 
-export function upsertEntry<K extends Kind>(table: K, row: any): string {
+export function upsertEntry<K extends Kind>(table: K, row: any, action?: SleepAction): string {
   assertAccess(row.baby_id);
   const uid = currentUserId()!; const t = nowIso();
   const idf = idField[table];
@@ -429,7 +439,7 @@ export function upsertEntry<K extends Kind>(table: K, row: any): string {
     const prev = (s[table] as any)[id];
     const next = { ...prev, ...row, [idf]: id, updated_by: uid, updated_at: t, created_by: prev?.created_by ?? uid, created_at: prev?.created_at ?? t };
     (s[table] as any)[id] = next;
-    queue(s, table, next);
+    queue(s, table, next, action);
   });
   return id;
 }
@@ -487,7 +497,8 @@ export function activeSleep(baby_id: string, s: State = state): SleepEntry | nul
 }
 export function startSleep(baby_id: string) {
   if (activeSleep(baby_id)) throw new Error('A sleep session is already running.');
-  return upsertEntry('sleeps', { baby_id, start_datetime: nowIso(), status: 'active', pauses: [], end_datetime: null, duration_seconds: null });
+  const t = nowIso();
+  return upsertEntry('sleeps', { baby_id, start_datetime: t, status: 'active', pauses: [], end_datetime: null, duration_seconds: null }, { kind: 'start', at: t });
 }
 export function sleepElapsed(e: SleepEntry, now = Date.now()) {
   const end = e.end_datetime ? new Date(e.end_datetime).getTime() : now;
@@ -495,18 +506,84 @@ export function sleepElapsed(e: SleepEntry, now = Date.now()) {
   for (const p of e.pauses || []) paused += ((p.end ? new Date(p.end).getTime() : Math.min(now, end)) - new Date(p.start).getTime());
   return Math.max(0, (end - new Date(e.start_datetime).getTime() - paused) / 1000);
 }
-export function pauseSleep(e: SleepEntry) { upsertEntry('sleeps', { ...e, status: 'paused', pauses: [...(e.pauses || []), { start: nowIso(), end: null }] }); }
-export function resumeSleep(e: SleepEntry) {
-  const pauses = (e.pauses || []).map(p => p.end ? p : { ...p, end: nowIso() });
-  upsertEntry('sleeps', { ...e, status: 'active', pauses });
+// Timer taps act on the sleep as it is on this device now (another caregiver may have changed it since the
+// screen was drawn). The server applies the same action to its copy and has the final say.
+const current = (e: SleepEntry) => state.sleeps[e.sleep_id] ?? e;
+export function pauseSleep(e: SleepEntry) {
+  e = current(e); if (e.status !== 'active' || e.deleted_at) return;
+  const t = nowIso();
+  upsertEntry('sleeps', { ...e, status: 'paused', pauses: [...(e.pauses || []), { start: t, end: null }] }, { kind: 'pause', at: t });
 }
-export function stopSleep(e: SleepEntry) {
+export function resumeSleep(e: SleepEntry) {
+  e = current(e); if (e.status !== 'paused' || e.deleted_at) return;
   const t = nowIso();
   const pauses = (e.pauses || []).map(p => p.end ? p : { ...p, end: t });
-  const done = { ...e, end_datetime: t, pauses, status: 'completed' as const };
+  upsertEntry('sleeps', { ...e, status: 'active', pauses }, { kind: 'resume', at: t });
+}
+/** Ends a sleep at `at`: open pauses close then, pauses after it are dropped. */
+function endedAt(e: SleepEntry, at: string): SleepEntry {
+  const pauses = (e.pauses || []).filter(p => new Date(p.start) < new Date(at)).map(p => !p.end || new Date(p.end) > new Date(at) ? { ...p, end: at } : p);
+  const done = { ...e, end_datetime: at, pauses, status: 'completed' as const };
   done.duration_seconds = Math.round(sleepElapsed(done));
-  upsertEntry('sleeps', done);
   return done;
+}
+export function stopSleep(e: SleepEntry) {
+  e = current(e); if (e.status === 'completed' || e.deleted_at) return e;
+  const t = nowIso();
+  const done = endedAt(e, t);
+  upsertEntry('sleeps', done, { kind: 'stop', at: t });
+  return done;
+}
+/** Throws away a running timer. Never deletes a sleep another caregiver has already saved. */
+export function discardSleep(e: SleepEntry) {
+  e = current(e); if (e.status === 'completed' || e.deleted_at) return;
+  const t = nowIso();
+  upsertEntry('sleeps', { ...e, deleted_at: t }, { kind: 'discard', at: t });
+}
+
+export interface SleepResult { outcome: 'started' | 'joined' | 'stopped' | 'already_stopped' | 'paused' | 'resumed' | 'not_running' | 'discarded'; row: any }
+const asSleep = (r: any): SleepEntry => ({ ...r, pauses: typeof r.pauses === 'string' ? JSON.parse(r.pauses) : (r.pauses || []) });
+/** The server's answer to a sleep-timer action: take its copy of the sleep, and tell the person if another caregiver got there first. */
+export function applySleepResult(op: OutboxOp, res: SleepResult) {
+  const me = currentUserId(); const row = asSleep(res.row); const mine = op.row.sleep_id as string;
+  const conflict = res.outcome === 'already_stopped' || res.outcome === 'not_running';
+  setState(s => {
+    s.outbox = s.outbox.filter(o => o.op_id !== op.op_id);
+    if (row.sleep_id !== mine) {
+      // joined another caregiver's timer: what this device did to its own timer now applies to theirs
+      delete s.sleeps[mine];
+      for (const o of [...s.outbox, ...(s.syncFailed || [])]) if (o.table === 'sleeps' && o.row.sleep_id === mine) o.row = { ...o.row, sleep_id: row.sleep_id, start_datetime: row.start_datetime, created_by: row.created_by };
+    }
+    // a later tap still waiting to be sent would be refused too (and announced twice)
+    if (conflict) s.outbox = s.outbox.filter(o => !(o.table === 'sleeps' && o.action && o.row.sleep_id === row.sleep_id));
+    const waiting = s.outbox.some(o => o.table === 'sleeps' && o.row.sleep_id === row.sleep_id);
+    // with more taps waiting, this device's copy is already ahead of the server's
+    if (!waiting || conflict || row.sleep_id !== mine) s.sleeps[row.sleep_id] = row;
+  }, false);
+  const n = sleepNotice(op, res.outcome, row, me);
+  if (n) notify(n);
+}
+function sleepNotice(op: OutboxOp, outcome: SleepResult['outcome'], row: SleepEntry, me: string | null): Notice | null {
+  const by = row.updated_by && row.updated_by !== me ? (state.users[row.updated_by]?.display_name || 'Another caregiver') : null;
+  const baby = state.babies[row.baby_id]; const tz = baby?.timezone || 'UTC'; const fmt = myPrefs().time_format;
+  const at = (iso: string) => formatTime(iso, tz, fmt);
+  if (outcome === 'joined' && row.created_by !== me) {
+    return { text: `${state.users[row.created_by!]?.display_name || 'Another caregiver'} already started this sleep at ${at(row.start_datetime)}, so you’re both timing the same one.` };
+  }
+  if (!by) return null; // our own earlier tap (a retry or a double tap): nothing to tell
+  if (outcome === 'already_stopped' && op.action?.kind === 'stop' && row.end_datetime) {
+    const mineAt = op.action.at;
+    const useMine = Math.abs(new Date(mineAt).getTime() - new Date(row.end_datetime).getTime()) >= 60000 && new Date(mineAt) > new Date(row.start_datetime);
+    return {
+      text: `${by} already stopped this sleep at ${at(row.end_datetime)}.`,
+      action: useMine ? { label: `Use ${at(mineAt)}`, run: () => { const cur = state.sleeps[row.sleep_id]; if (cur && cur.status === 'completed' && !cur.deleted_at) upsertEntry('sleeps', endedAt(cur, mineAt)); } } : undefined,
+    };
+  }
+  if (outcome === 'not_running') {
+    if (row.deleted_at) return { text: `${by} discarded this sleep timer.` };
+    if (row.end_datetime) return { text: op.action?.kind === 'discard' ? `${by} already saved this sleep (ended ${at(row.end_datetime)}), so it was kept.` : `${by} already stopped this sleep at ${at(row.end_datetime)}.` };
+  }
+  return null;
 }
 
 // ---------------- Prefs & chat ----------------
@@ -547,10 +624,12 @@ export function retryFailedSync() {
     // Retry with the row as it is now on this device, once per row, and skip rows that already have a newer change
     // waiting: replaying the old copy would overwrite later edits on the server (upserts are last-push-wins).
     const ID: Record<Table, string> = { babies: 'baby_id', access: 'access_id', feeds: 'feed_id', poos: 'poo_id', sleeps: 'sleep_id', growth: 'measurement_id', trackers: 'tracker_id', extras: 'extra_id' };
+    // Sleep-timer actions are retried as they were (each is one tap, applied in order by the server).
     const key = (o: OutboxOp) => `${o.table}:${o.row[ID[o.table]]}`;
-    const waiting = new Set(s.outbox.map(key));
+    const waiting = new Set(s.outbox.filter(o => !o.action).map(key));
     const retry: OutboxOp[] = [];
     for (const { error, failed_at, ...op } of (s.syncFailed || []).slice().reverse()) {
+      if (op.action) { retry.unshift(op); continue; }
       const k = key(op); if (waiting.has(k)) continue; waiting.add(k);
       const current = (s[op.table] as Record<string, any>)[op.row[ID[op.table]]];
       retry.unshift(current && !(op.table === 'babies' && op.row.deleted_at) ? { ...op, row: structuredClone(current) } : op);

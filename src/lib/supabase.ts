@@ -1,10 +1,12 @@
 // Remote backend: Supabase (GoTrue auth + PostgREST), dependency-free fetch client.
 // - Pushes the local outbox with idempotent upserts keyed by client UUIDs (no duplicates on retry).
 // - Pulls changes by server_updated_at cursor (server clock, so late offline edits are never missed).
-// - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
+// - Polls every 15 s and on focus/online; Supabase Realtime signals sleep changes so other caregivers see them within seconds.
+// - Sleep-timer taps (start/pause/resume/stop/discard) are sent as actions to database functions, which apply them
+//   in order: the first Stop wins and a finished sleep can't be reopened by a phone that hadn't seen it yet.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, type Table } from './store';
+import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, type Table, type OutboxOp, type SleepResult } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
 
@@ -100,6 +102,15 @@ const COLUMNS: Record<Table, string[]> = {
 const pick = (t: Table, row: any) => { const o: any = Object.fromEntries(COLUMNS[t].filter(c => c in row).map(c => [c, row[c] ?? null])); if (t === 'poos' && !o.nappy_type) o.nappy_type = 'poo'; if (t === 'babies' && o.wet_tracking == null) o.wet_tracking = false; return o; };
 
 // ---------- push ----------
+/** Sends a sleep-timer tap to its database function. False if the database doesn't have them yet (migration 0008
+ *  not applied): the caller then uploads the row the old way, so sleeps keep syncing either way. */
+async function pushSleepAction(op: OutboxOp): Promise<boolean> {
+  const a = op.action!; const r = op.row;
+  const args = a.kind === 'start' ? { p_sleep_id: r.sleep_id, p_baby_id: r.baby_id, p_at: a.at }
+    : a.kind === 'discard' ? { p_sleep_id: r.sleep_id } : { p_sleep_id: r.sleep_id, p_at: a.at };
+  try { applySleepResult(op, await rest('POST', `rpc/sleep_${a.kind}`, args) as SleepResult); return true; }
+  catch (e: any) { if (e.status === 404 && e.code === 'PGRST202') return false; throw e; }
+}
 let pushing = false;
 async function push() {
   if (pushing || !auth || !navigator.onLine) return; pushing = true;
@@ -108,7 +119,8 @@ async function push() {
       const op = getState().outbox[0]; if (!op) break;
       const { table, id } = REMOTE[op.table]; const me = currentUserId(); const row = op.row;
       try {
-        if (op.table === 'babies' && row.deleted_at) await rest('DELETE', `${table}?baby_id=eq.${row.baby_id}`);
+        if (op.table === 'sleeps' && op.action && await pushSleepAction(op)) { /* applied, and the server's copy taken */ }
+        else if (op.table === 'babies' && row.deleted_at) await rest('DELETE', `${table}?baby_id=eq.${row.baby_id}`);
         else if (op.table === 'access') {
           if (row.role === 'owner') { /* created by trigger on the server */ }
           else if (row.user_id === me || (row.invitation_status === 'declined' && row.invited_email === auth.user.email)) await rest('POST', 'rpc/respond_invitation', { p_access_id: row.access_id, p_accept: row.invitation_status === 'accepted' });
@@ -187,6 +199,43 @@ async function pull() {
   }, false);
 }
 
+// ---------- realtime ----------
+// Supabase Realtime (Phoenix websocket protocol) is used only as a "a sleep changed" signal: it triggers a normal
+// sync, so row-level security, merging and cursors stay in one place. Polling every 15 s remains the fallback.
+let ws: WebSocket | null = null; let wsRef = 0; let wsBeat: any = null; let wsRetry = 0; let wsToken = '';
+let pokeTimer: any = null;
+const pokeSoon = () => { clearTimeout(pokeTimer); pokeTimer = setTimeout(() => cycle(), 400); };
+function startRealtime() {
+  if (ws || !auth || typeof WebSocket === 'undefined' || !navigator.onLine) return;
+  const sock = new WebSocket(`${URL_.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${encodeURIComponent(KEY)}&vsn=1.0.0`);
+  ws = sock;
+  const topic = 'realtime:bebig-sleeps';
+  const send = (t: string, event: string, payload: any) => { if (sock.readyState === 1) sock.send(JSON.stringify({ topic: t, event, payload, ref: String(++wsRef) })); };
+  sock.onopen = async () => {
+    wsToken = await token().catch(() => '');
+    if (!wsToken) return sock.close();
+    send(topic, 'phx_join', { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table: 'sleep_entries' }] }, access_token: wsToken });
+    wsBeat = setInterval(async () => {
+      send('phoenix', 'heartbeat', {});
+      const t = await token().catch(() => ''); // keep the channel's sign-in fresh
+      if (t && t !== wsToken) { wsToken = t; send(topic, 'access_token', { access_token: t }); }
+    }, 25000);
+  };
+  sock.onmessage = m => {
+    try {
+      const j = JSON.parse(m.data);
+      if (j.event === 'phx_reply' && j.payload?.status === 'ok') wsRetry = 0;
+      if (j.event === 'postgres_changes') pokeSoon();
+    } catch { /* ignore */ }
+  };
+  sock.onerror = () => sock.close();
+  sock.onclose = () => {
+    clearInterval(wsBeat); if (ws === sock) ws = null;
+    if (auth && document.visibilityState === 'visible') setTimeout(startRealtime, Math.min(60000, 2000 * 2 ** wsRetry++));
+  };
+}
+function stopRealtime() { const s = ws; ws = null; clearInterval(wsBeat); s?.close(); }
+
 let timer: any = null;
 let syncError: string | null = null;
 export const lastSyncError = () => syncError;
@@ -226,14 +275,14 @@ export function startRemoteSync() {
       return { user_id: j.user.id, email: j.user.email, display_name: j.user.user_metadata?.display_name || email.split('@')[0] };
     },
     async reset(email, captchaToken) { await gotrue('recover', { email, ...captcha(captchaToken) }); },
-    async signOut() { try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
+    async signOut() { stopRealtime(); try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name: display_name.slice(0, 80) }, 'return=minimal'); },
     async leaveBaby(baby_id) {
       try { await rest('POST', 'rpc/leave_baby', { b: baby_id }); }
       catch (e: any) { throw new Error(e.status === 404 ? 'Leaving isn’t available yet — ask the profile owner to remove you.' : e.message || 'Couldn’t leave. Check your connection and try again.'); }
     },
-    onSignedIn() { syncAiConsent(); setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); },
+    onSignedIn() { syncAiConsent(); setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); startRealtime(); },
   });
   // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
@@ -281,14 +330,23 @@ export function startRemoteSync() {
     }, 300);
   }
   const kick = () => cycle();
-  window.addEventListener('online', kick);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') kick(); });
+  window.addEventListener('online', () => { kick(); startRealtime(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { kick(); startRealtime(); } });
+  // sleep-timer taps go out straight away (and the result comes back), not on the next tick
+  let lastTap: string | undefined;
+  subscribe(() => {
+    const ob = getState().outbox; let tap: string | undefined; // only a new tap triggers this, so failures can't loop
+    for (let i = ob.length - 1; i >= 0 && !tap; i--) if (ob[i].action) tap = ob[i].op_id;
+    if (!tap || tap === lastTap) return;
+    lastTap = tap;
+    if (auth && navigator.onLine) setTimeout(() => cycle(), 0);
+  });
   let debounce: any;
   setInterval(() => { if (getState().outbox.length && !pushing) { clearTimeout(debounce); debounce = setTimeout(push, 300); } }, 1000);
   timer = setInterval(kick, 15000);
   // changes the server rejected (e.g. before a database update was applied) are retried every 5 minutes
   setInterval(() => { if (auth && navigator.onLine && getState().syncFailed?.length) { retryFailedSync(); kick(); } }, 5 * 60000);
-  if (auth) { syncAiConsent(); if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
+  if (auth) { syncAiConsent(); if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); startRealtime(); }
   else if (currentUserId()) {
     // looks signed in on this device, but there is no server session (e.g. signed up before cloud sync existed):
     // ask to sign in again so the data can sync — nothing local is deleted
