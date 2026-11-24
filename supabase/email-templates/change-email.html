@@ -1,13 +1,15 @@
 <!-- Supabase → Authentication → Emails → Templates → "Change email address"
-     Subject: Confirm your new Bebig email -->
+     Subject: Confirm your new Bebig email address
+     With "Secure email change" on, Supabase sends this to both the old and the new address;
+     each link must be opened before the change goes through. -->
 <div style="font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background:#F8F5FB; padding:32px 16px; color:#2E2A3B">
   <div style="max-width:480px; margin:0 auto; background:#FFFFFF; border-radius:20px; padding:32px 28px; border:1px solid #EDE8F4">
-    <h1 style="margin:0 0 12px; font-size:22px; color:#2E2A3B">Confirm your new email</h1>
-    <p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#4C475A">Someone asked to change the email for your Bebig account from <strong>{{ .Email }}</strong> to <strong>{{ .NewEmail }}</strong>. Tap below to confirm.</p>
+    <h1 style="margin:0 0 12px; font-size:22px; color:#2E2A3B">Confirm your email change</h1>
+    <p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#4C475A">Someone asked to change the email address of a Bebig account from <strong>{{ .Email }}</strong> to <strong>{{ .NewEmail }}</strong>. Please confirm to continue.</p>
     <p style="margin:0 0 24px"><a href="{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=email_change" style="display:inline-block; background:#6A5BAE; color:#FFFFFF; text-decoration:none; font-weight:700; padding:13px 26px; border-radius:999px; font-size:15px">Confirm email change</a></p>
     <p style="margin:0 0 6px; font-size:13px; color:#6B6579">Or copy this link into your browser:</p>
     <p style="margin:0 0 24px; font-size:13px; word-break:break-all; color:#6A5BAE">{{ .SiteURL }}/?token_hash={{ .TokenHash }}&type=email_change</p>
-    <p style="margin:0; font-size:12px; color:#6B6579">If you didn’t ask for this, ignore this email — your email stays the same — and consider changing your password.</p>
+    <p style="margin:0; font-size:12px; color:#6B6579">If you didn’t ask for this, don’t open the link — your email stays the same. Please let us know at support@bebig.app.</p>
   </div>
   <p style="text-align:center; font-size:12px; color:#6B6579; margin:16px 0 0">Bebig · bebig.app</p>
 </div>

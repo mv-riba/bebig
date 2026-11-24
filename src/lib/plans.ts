@@ -135,7 +135,7 @@ export function localTrial(d: Data, now: number, prev?: PlusStatus): PlusStatus 
 }
 
 const daysLeft = (iso: string, now: number) => Math.max(1, Math.ceil((new Date(iso).getTime() - now) / 86400000));
-// last day that is still included (an end of 1 Apr 00:00 reads "until 31 March")
+// last day that is still included (an end of 1 Jan 00:00 reads "until 31 December")
 const lastDay = (iso: string, tz: string) => formatDateKey(dateKey(new Date(new Date(iso).getTime() - 1), tz), 'long');
 
 /** One line describing the plan, for Settings and the Plus page. */
