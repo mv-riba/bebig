@@ -23,8 +23,17 @@ const saveAuth = (s: AuthSession | null) => { auth = s; s ? localStorage.setItem
 async function gotrue(path: string, body: any) {
   const r = await fetch(`${URL_}/auth/v1/${path}`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error_description || j.msg || j.message || 'Authentication failed');
+  if (!r.ok) throw new Error(weakPasswordMessage(j) || j.error_description || j.msg || j.message || 'Authentication failed');
   return j;
+}
+// Supabase's own weak-password text lists every allowed character; show a short, friendly line instead.
+export function weakPasswordMessage(j: any): string | null {
+  if (j?.error_code !== 'weak_password' && j?.code !== 'weak_password') return null;
+  const reasons: string[] = j.weak_password?.reasons || [];
+  if (reasons.includes('pwned')) return 'This password has appeared in a data leak. Please choose a different one.';
+  if (reasons.includes('characters')) return 'Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol.';
+  if (reasons.includes('length')) return 'Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol.';
+  return 'Please choose a stronger password.';
 }
 // CAPTCHA token for sign-up, sign-in and password reset; Supabase Auth verifies it with Turnstile (single use)
 const captcha = (t?: string) => t ? { gotrue_meta_security: { captcha_token: t } } : {};
@@ -330,10 +339,10 @@ export function startRemoteSync() {
         if (!confirmAccountFromLink(j.user)) return;
         const sess = toSession(j); saveAuth(sess);
         if (type === 'recovery' || type === 'invite') {
-          const pw = prompt(type === 'invite' ? 'Welcome to Bebig! Choose a password for your account (at least 8 characters)' : 'Choose a new password (at least 8 characters)');
+          const pw = prompt(type === 'invite' ? 'Welcome to Bebig! Choose a password for your account (at least 8 characters, with upper and lower case letters, a number and a symbol)' : 'Choose a new password (at least 8 characters, with upper and lower case letters, a number and a symbol)');
           if (pw && pw.length >= 8) {
             const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${sess.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
-            alert(r.ok ? (type === 'invite' ? 'Password set — you’re signed in.' : 'Password updated.') : 'Sorry, the password could not be changed. Please request a new link.');
+            alert(r.ok ? (type === 'invite' ? 'Password set — you’re signed in.' : 'Password updated.') : 'Sorry, the password could not be changed. Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol. If it already does, request a new link.');
           }
         }
         adoptRemoteUser({ user_id: j.user.id, email: j.user.email, display_name: j.user.user_metadata?.display_name || j.user.email.split('@')[0] });
@@ -355,7 +364,7 @@ export function startRemoteSync() {
     history.replaceState(null, '', location.pathname);
     const at = h.get('access_token')!;
     setTimeout(async () => {
-      const pw = prompt('Choose a new password (at least 8 characters)');
+      const pw = prompt('Choose a new password (at least 8 characters, with upper and lower case letters, a number and a symbol)');
       if (!pw || pw.length < 8) return alert('Password not changed.');
       const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
       alert(r.ok ? 'Password updated — please sign in.' : 'Sorry, that link has expired. Request a new one.');
