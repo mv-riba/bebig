@@ -47,7 +47,7 @@ p { margin: .3em 0; }
 .page-head { display: grid; grid-template-columns: 80px 1fr 80px; align-items: center; padding: calc(12px + var(--safe-t)) 14px 8px; position: sticky; top: 0; background: var(--cream); z-index: 5; }
 .page-head h1 { font-size: 1.25rem; text-align: center; }
 .page-head-r { justify-self: end; display: flex; gap: 6px; }
-.page-body { padding: 8px 18px calc(40px + var(--safe-b)); display: flex; flex-direction: column; gap: 16px; position: relative; z-index: 1; }
+.page-body { flex: 1 0 auto; padding: 8px 18px calc(40px + var(--safe-b)); display: flex; flex-direction: column; gap: 16px; position: relative; z-index: 1; }
 .form-page .page-body { padding-bottom: 130px; }
 .wave { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 110px; z-index: 0; pointer-events: none; }
 .wave-sage path { fill: var(--sage-l); } .wave-peach path { fill: var(--peach-l); } .wave-lav path { fill: var(--lav-l); }
