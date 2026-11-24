@@ -7,6 +7,7 @@ Android target API change.
 
 - `twa-manifest.json` — the wrapper's config. **`packageId` (`app.bebig`) is permanent once published.**
 - The Android project itself is generated in CI from this file (it isn't committed).
+- `iconUrl` is `icon-splash-512.png` (just the moon, transparent): Bubblewrap uses it for the launch screen, which sits on the app's pale background so it fades straight into the app. The launcher icon comes from `maskableIconUrl`.
 - Targets API 36; runs on Android 7.0+ (`minSdkVersion` 24, required by Google's androidbrowserhelper library).
 
 ## Building

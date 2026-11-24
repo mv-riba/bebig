@@ -67,7 +67,7 @@ jobs:
         run: |
           jq --arg v "$VERSION_NAME" --argjson c "$VERSION_CODE" \
             '.appVersionName = $v | .appVersion = $v | .appVersionCode = $c
-             | .iconUrl = "http://localhost:8765/icon-512.png"
+             | .iconUrl = "http://localhost:8765/icon-splash-512.png"
              | .maskableIconUrl = "http://localhost:8765/icon-maskable-512.png"' \
             twa-manifest.json > twa.tmp && mv twa.tmp twa-manifest.json
           jq '{packageId, host, appVersionName, appVersionCode}' twa-manifest.json
