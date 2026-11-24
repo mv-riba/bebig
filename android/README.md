@@ -7,6 +7,7 @@ Android target API change.
 
 - `twa-manifest.json` — the wrapper's config. **`packageId` (`app.bebig`) is permanent once published.**
 - The Android project itself is generated in CI from this file (it isn't committed).
+- Targets API 36; runs on Android 7.0+ (`minSdkVersion` 24, required by Google's androidbrowserhelper library).
 
 ## Building
 
