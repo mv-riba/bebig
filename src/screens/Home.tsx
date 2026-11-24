@@ -10,7 +10,7 @@ import { BabySwitcher } from '../ui/babies';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween } from '../lib/time';
-import { sleepElapsed, useStore, currentUserId } from '../lib/store';
+import { sleepElapsed, feedTimerTotals, useStore, currentUserId } from '../lib/store';
 import { SyncBadge } from '../ui/SyncBadge';
 
 export function BabyAvatar({ src, name, size = 64 }: { src?: string | null; name: string; size?: number }) {
@@ -24,7 +24,7 @@ export function Home() {
   const me = useStore(s => s.users[currentUserId() ?? '']);
   const insight = useMemo(() => ctx ? buildInsights(ctx.data, ctx.prefs.time_format, now) : null, [ctx, Math.floor(now / 60000)]);
   if (!ctx) return null;
-  const { baby, data, prefs, active } = ctx; const tz = baby.timezone; const fmt = prefs.time_format;
+  const { baby, data, prefs, active, feedTimer } = ctx; const tz = baby.timezone; const fmt = prefs.time_format;
   const today = todayKey(tz);
   const stats = dayStats(data, today, now);
   const lf = lastFeed(data), lp = lastPoo(data), ls = lastCompletedSleep(data);
@@ -51,10 +51,11 @@ export function Home() {
       </header>
 
       <section className="summary" aria-label="Last activity">
-        <button className="sum-card sum-feed" onClick={() => nav.push({ name: 'feed' })} aria-label={lf ? `Last feed ${formatTime(lf.start_datetime, tz, fmt)}, ${formatAgo(lf.start_datetime, now)}. Log feed` : 'No feeds yet. Log feed'}>
-          <span className="sum-ic">{lf?.feeding_type === 'breast' ? <IBreast size={30} /> : <IBottle size={30} />}</span>
-          <span className="sum-label">Feed</span>
-          {lf ? <><span className="sum-time">{formatTime(lf.start_datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lf.start_datetime, now)})</span></> : <span className="sum-ago">No feeds yet</span>}
+        <button className={`sum-card sum-feed ${feedTimer ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'feed' })} aria-label={feedTimer ? `Breastfeeding timer ${feedTimer.segment_started_at ? 'running' : 'paused'} since ${formatTime(feedTimer.started_at, tz, fmt)}. Open timer` : lf ? `Last feed ${formatTime(lf.start_datetime, tz, fmt)}, ${formatAgo(lf.start_datetime, now)}. Log feed` : 'No feeds yet. Log feed'}>
+          <span className="sum-ic">{feedTimer || lf?.feeding_type === 'breast' ? <IBreast size={30} /> : <IBottle size={30} />}</span>
+          <span className="sum-label">{feedTimer ? <>{feedTimer.segment_started_at && <span className="pulse" aria-hidden="true" />} {feedTimer.segment_started_at ? 'Feeding' : 'Feed paused'}</> : 'Feed'}</span>
+          {feedTimer ? <><span className="sum-time">{formatDuration(feedTimerTotals(feedTimer, now).total, true)}</span><span className="sum-ago">since {formatTime(feedTimer.started_at, tz, fmt)}</span></>
+            : lf ? <><span className="sum-time">{formatTime(lf.start_datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lf.start_datetime, now)})</span></> : <span className="sum-ago">No feeds yet</span>}
         </button>
         <button className="sum-card sum-poo" onClick={() => nav.push({ name: 'poo' })} aria-label={lp ? `Last ${nappy ? 'nappy' : 'poo'} ${formatTime(lp.datetime, tz, fmt)}, ${formatAgo(lp.datetime, now)}. Log ${nappy ? 'nappy' : 'poo'}` : `No ${nappy ? 'nappies' : 'poos'} yet. Log ${nappy ? 'nappy' : 'poo'}`}>
           <span className="sum-ic"><IPoo size={30} /></span>

@@ -44,7 +44,8 @@ function writeHtml(meta) {
   const html = fs.readFileSync('index.html', 'utf8').replace('<!--CSS-->', css ? `<link rel="stylesheet" href="./${css}">` : '').replace('<!--JS-->', `<script type="module" src="./${js}"></script>`)
     // Content-Security-Policy: scripts only from this site (+ Turnstile's script and frame when CAPTCHA is on);
     // network only to this site and the Supabase project
-    .replace('__CONNECT_SRC__', remote ? new URL(supabaseUrl).origin : '')
+    // (wss:// for Realtime, which tells the app a sleep changed so it syncs straight away)
+    .replace('__CONNECT_SRC__', remote ? `${new URL(supabaseUrl).origin} ${new URL(supabaseUrl).origin.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:')}` : '')
     .replaceAll('__CAPTCHA_SRC__', turnstileSiteKey ? 'https://challenges.cloudflare.com' : '');
   fs.writeFileSync(path.join(out, 'index.html'), html);
   // service worker precache list + versioned cache name

@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useStore, currentUserId, selectedBaby, isRemote, isInitialPullDone } from './lib/store';
+import { useStore, currentUserId, selectedBaby, isRemote, isInitialPullDone, onNotice } from './lib/store';
 import { Logo } from './screens/Auth';
 import { NavCtx, Tab, Route } from './ui/nav';
-import { ToastProvider, ConfirmProvider } from './ui/ui';
+import { ToastProvider, ConfirmProvider, useToast } from './ui/ui';
 import { IHome, ICalendar, IInsights, IChat, ISettings } from './ui/icons';
 import { AuthScreen, Onboarding, InvitesBanner } from './screens/Auth';
 import { Page } from './ui/ui';
@@ -95,12 +95,20 @@ function Shell() {
   );
 }
 
+/** Messages from sync (e.g. another caregiver had already stopped the sleep) appear as toasts. */
+function SyncNotices() {
+  const toast = useToast();
+  useEffect(() => onNotice(n => toast(n.text, n.action)), [toast]);
+  return null;
+}
+
 export function App() {
   const uid = useStore(() => currentUserId());
   const hasBaby = useStore(s => !!selectedBaby(s));
   const loading = useStore(() => isRemote() && !isInitialPullDone());
   return (
     <ToastProvider><ConfirmProvider>
+      <SyncNotices />
       {!uid ? <AuthScreen /> : !hasBaby && loading ? <div className="auth"><div className="auth-brand"><Logo size={64} /><h1>Bebig</h1><p className="muted">Loading your baby’s profile…</p></div></div> : !hasBaby ? <Onboarding /> : <Shell />}
     </ConfirmProvider></ToastProvider>
   );

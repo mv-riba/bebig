@@ -3,7 +3,7 @@ import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, R
 import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash, ICrown } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
-import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds, extraTimersOf, timerStartedBy } from '../lib/store';
 import { IPlay, IPause, IStop } from '../ui/icons';
 import { MAX_EXTRA_AMOUNT } from '../lib/validate';
 import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus, dailyEntryOn } from '../lib/extras';
@@ -118,7 +118,7 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
 // ---------------- Log / edit an extra entry ----------------
 export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: string; entryId?: string; onKey?: string; onDone: () => void }) {
   const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000); const canX = useCanExtras();
-  const timer = useStore(s => s.extraTimers?.[trackerId ?? ''] ?? null);
+  const timer = useStore(s => extraTimersOf(s)[trackerId ?? ''] ?? null);
   const ex: ExtraEntry | undefined = entryId ? getState().extras[entryId] : undefined;
   const t: TrackerDef | undefined = getState().trackers[ex?.tracker_id ?? trackerId ?? ''];
   const tz = ctx?.baby.timezone ?? 'UTC';
@@ -160,12 +160,12 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
       ) : (
         <>
           <div className="timer-big" aria-live="off">{formatClock(extraTimerSeconds(timer, now))}</div>
-          <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'} · started {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>
+          <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'} · started {formatTime(timer.started_at, tz, ctx.prefs.time_format)}{timerStartedBy(timer) ? ` by ${timerStartedBy(timer)}` : ''}</div>
           <div className="btn-row">
             {timer.segment_started_at
               ? <button className="btn soft" onClick={() => pauseExtraTimer(t.tracker_id)}><IPause size={16} /> Pause</button>
               : <button className="btn soft" onClick={() => resumeExtraTimer(t.tracker_id)}><IPlay size={16} /> Resume</button>}
-            <button className="btn primary" onClick={() => { try { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (r) toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => deleteEntry('extras', r.id) }); onDone(); } catch (x: any) { setErr(x.message); } }}><IStop size={16} /> Stop & save</button>
+            <button className="btn primary" onClick={() => { try { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (!r) throw new Error('This timer has already been stopped.'); toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => deleteEntry('extras', r.id) }); onDone(); } catch (x: any) { setErr(x.message); } }}><IStop size={16} /> Stop & save</button>
           </div>
           <button className="link small" onClick={async () => { if (await confirm({ title: `Discard the ${t.name} timer?`, text: 'Nothing will be saved.', ok: 'Discard', danger: true })) discardExtraTimer(t.tracker_id); }}>Discard timer</button>
         </>
@@ -195,7 +195,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
 // ---------------- Home: "Log something else" sheet ----------------
 export function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000);
-  const timers = useStore(s => s.extraTimers ?? {}); const canX = useCanExtras();
+  const timers = useStore(s => extraTimersOf(s)); const canX = useCanExtras();
   if (!ctx) return null;
   const { baby, trackers, extras, data, prefs } = ctx; const tz = baby.timezone;
   const today = todayKey(tz);
@@ -242,7 +242,7 @@ export { Row, IChevron };
 /** Home: a slim bar for each running "How long" timer, so it isn't hidden in the sheet. */
 export function RunningExtraTimers() {
   const ctx = useBaby(); const nav = useNav(); const now = useNow(1000);
-  const timers = useStore(s => Object.values(s.extraTimers ?? {}));
+  const timers = useStore(s => Object.values(extraTimersOf(s)));
   if (!ctx) return null;
   const mine = timers.filter(t => t.baby_id === ctx.baby.baby_id).map(t => ({ t, def: ctx.allTrackers.find(d => d.tracker_id === t.tracker_id) })).filter(x => x.def);
   if (!mine.length) return null;

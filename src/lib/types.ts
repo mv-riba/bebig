@@ -108,18 +108,32 @@ export interface GrowthMeasurement extends Audited {
   notes?: string | null;
 }
 
-/** A breastfeeding timer that persists across app restarts (PRD 7.3). */
-export interface FeedTimer {
+/** A running breastfeeding or extras ("How long") timer. Shared with the other caregivers through the server
+ *  (table running_timers, changed only by the timer_* actions in migration 0008), and kept until it's saved or
+ *  discarded, so it survives app restarts (PRD 7.3). */
+export interface RunningTimer {
+  timer_id: ID;
   baby_id: ID;
+  kind: 'feed' | 'extra';
+  tracker_id: ID | null; // extras only
   started_at: string;
-  side: 'left' | 'right' | null;
-  // accumulated seconds per side for segments that have ended
+  side: 'left' | 'right' | null; // feed only: the side being timed now
+  // seconds of stretches that have ended, per side (extras use unsided_seconds)
   left_seconds: number;
   right_seconds: number;
   unsided_seconds: number;
-  segment_started_at: string | null; // null when paused
+  segment_started_at: string | null; // start of the current stretch; null while paused
+  ended_at: string | null; // set once saved or discarded
+  end_kind: 'saved' | 'discarded' | null;
+  entry_id: ID | null; // the feed / extras entry the winning Stop saved
   created_by: ID | null; // null once that person deleted their account
+  updated_by: ID | null;
+  created_at: string;
+  updated_at: string;
+  server_updated_at?: string;
 }
+/** The breastfeeding timer (a running timer of kind 'feed'). */
+export type FeedTimer = RunningTimer;
 
 export interface UserPrefs {
   time_format: '24h' | '12h';

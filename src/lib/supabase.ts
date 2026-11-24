@@ -1,10 +1,14 @@
 // Remote backend: Supabase (GoTrue auth + PostgREST), dependency-free fetch client.
 // - Pushes the local outbox with idempotent upserts keyed by client UUIDs (no duplicates on retry).
 // - Pulls changes by server_updated_at cursor (server clock, so late offline edits are never missed).
-// - Polls every 15 s and on focus/online for near-real-time updates between caregivers.
+// - Polls every 15 s and on focus/online; Supabase Realtime signals sleep and timer changes so other caregivers see
+//   them within seconds.
+// - Timer taps (sleep, breastfeeding, extras: start/pause/resume/side/stop/discard) are sent as actions to database
+//   functions, which apply them in order: the first Stop wins and a finished timer can't be reopened by a phone that
+//   hadn't seen it yet.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, type Table } from './store';
+import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, applyTimerResult, pruneFinishedTimers, type Table, type OutboxOp, type SleepResult, type TimerResult } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
 
@@ -86,6 +90,7 @@ const REMOTE: Record<Table, { table: string; id: string }> = {
   feeds: { table: 'feeding_entries', id: 'feed_id' }, poos: { table: 'poo_entries', id: 'poo_id' },
   sleeps: { table: 'sleep_entries', id: 'sleep_id' }, growth: { table: 'growth_measurements', id: 'measurement_id' },
   trackers: { table: 'extra_trackers', id: 'tracker_id' }, extras: { table: 'extra_entries', id: 'extra_id' },
+  timers: { table: 'running_timers', id: 'timer_id' }, // read here; changed only through the timer_* actions
 };
 const COLUMNS: Record<Table, string[]> = {
   babies: ['baby_id', 'name', 'date_of_birth', 'time_of_birth', 'sex', 'gestational_age_weeks', 'gestational_age_days', 'timezone', 'photograph_url', 'feeding_preference', 'wet_tracking', 'birth_weight_grams', 'birth_length_mm', 'birth_head_circumference_mm', 'created_by', 'created_at', 'updated_at'],
@@ -96,10 +101,36 @@ const COLUMNS: Record<Table, string[]> = {
   growth: ['measurement_id', 'baby_id', 'measurement_date', 'weight_grams', 'length_mm', 'head_circumference_mm', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   trackers: ['tracker_id', 'baby_id', 'name', 'icon', 'kind', 'unit', 'preset', 'enabled', 'sort', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
   extras: ['extra_id', 'baby_id', 'tracker_id', 'datetime', 'duration_seconds', 'value_num', 'level', 'notes', 'created_by', 'updated_by', 'created_at', 'updated_at', 'deleted_at'],
+  timers: [],
 };
 const pick = (t: Table, row: any) => { const o: any = Object.fromEntries(COLUMNS[t].filter(c => c in row).map(c => [c, row[c] ?? null])); if (t === 'poos' && !o.nappy_type) o.nappy_type = 'poo'; if (t === 'babies' && o.wet_tracking == null) o.wet_tracking = false; return o; };
 
 // ---------- push ----------
+/** Sends a sleep-timer tap to its database function. False if the database doesn't have them yet (migration 0008
+ *  not applied): the caller then uploads the row the old way, so sleeps keep syncing either way. */
+async function pushSleepAction(op: OutboxOp): Promise<boolean> {
+  const a = op.action!; const r = op.row;
+  const args = a.kind === 'start' ? { p_sleep_id: r.sleep_id, p_baby_id: r.baby_id, p_at: a.at }
+    : a.kind === 'discard' ? { p_sleep_id: r.sleep_id } : { p_sleep_id: r.sleep_id, p_at: a.at };
+  try { applySleepResult(op, await rest('POST', `rpc/sleep_${a.kind}`, args) as SleepResult); return true; }
+  catch (e: any) { if (e.status === 404 && e.code === 'PGRST202') return false; throw e; }
+}
+/** Sends a breastfeeding / extras timer tap to its database function. Before migration 0008 (no functions yet), or
+ *  for a timer the server never got, the tap is dropped: the timer then just stays on this device, as it used to. */
+async function pushTimerAction(op: OutboxOp) {
+  const a = op.action!; const r = op.row;
+  const args = a.kind === 'start' ? { p_timer_id: r.timer_id, p_baby_id: r.baby_id, p_kind: r.kind, p_tracker_id: r.tracker_id ?? null, p_side: a.side ?? null, p_at: a.at }
+    : a.kind === 'discard' ? { p_timer_id: r.timer_id }
+    : a.kind === 'stop' ? { p_timer_id: r.timer_id, p_at: a.at, p_entry_id: a.entry_id }
+    : a.kind === 'side' ? { p_timer_id: r.timer_id, p_side: a.side ?? null, p_at: a.at }
+    : { p_timer_id: r.timer_id, p_at: a.at };
+  try { applyTimerResult(op, await rest('POST', `rpc/timer_${a.kind}`, args) as TimerResult); }
+  catch (e: any) {
+    if ((e.status === 404 && e.code === 'PGRST202') || (a.kind !== 'start' && e.message === 'timer_not_found')) {
+      setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); }, false);
+    } else throw e;
+  }
+}
 let pushing = false;
 async function push() {
   if (pushing || !auth || !navigator.onLine) return; pushing = true;
@@ -108,7 +139,9 @@ async function push() {
       const op = getState().outbox[0]; if (!op) break;
       const { table, id } = REMOTE[op.table]; const me = currentUserId(); const row = op.row;
       try {
-        if (op.table === 'babies' && row.deleted_at) await rest('DELETE', `${table}?baby_id=eq.${row.baby_id}`);
+        if (op.table === 'timers') { if (op.action) await pushTimerAction(op); /* timers are never uploaded as rows */ }
+        else if (op.table === 'sleeps' && op.action && await pushSleepAction(op)) { /* applied, and the server's copy taken */ }
+        else if (op.table === 'babies' && row.deleted_at) await rest('DELETE', `${table}?baby_id=eq.${row.baby_id}`);
         else if (op.table === 'access') {
           if (row.role === 'owner') { /* created by trigger on the server */ }
           else if (row.user_id === me || (row.invitation_status === 'declined' && row.invited_email === auth.user.email)) await rest('POST', 'rpc/respond_invitation', { p_access_id: row.access_id, p_accept: row.invitation_status === 'accepted' });
@@ -117,7 +150,15 @@ async function push() {
           // editing someone else's entry: plain update (insert policy requires created_by = me)
           const { created_by, created_at, ...patch } = pick(op.table, row) as any;
           await rest('PATCH', `${table}?${id}=eq.${row[id]}`, patch, 'return=minimal');
-        } else await rest('POST', `${table}?on_conflict=${id}`, pick(op.table, row), 'resolution=merge-duplicates,return=minimal');
+        } else {
+          try { await rest('POST', `${table}?on_conflict=${id}`, pick(op.table, row), 'resolution=merge-duplicates,return=minimal'); }
+          catch (e: any) {
+            // A timer started by an app version from before 0008, refused because another caregiver's timer is
+            // already running (only one per baby): join that one instead of staying "not synced" for ever.
+            const joinable = op.table === 'sleeps' && e.code === '23505' && row.status !== 'completed' && !row.deleted_at;
+            if (!(joinable && await pushSleepAction({ ...op, action: { kind: 'start', at: row.start_datetime } }))) throw e;
+          }
+        }
         setState(s => { s.outbox = s.outbox.filter(o => o.op_id !== op.op_id); }, false);
       } catch (e: any) {
         if (e.status && e.status >= 400 && e.status < 500 && e.status !== 401 && e.status !== 408 && e.status !== 429) {
@@ -146,6 +187,7 @@ async function pull() {
     catch (e: any) {
       // one table failing (e.g. a database update not applied yet) must not stop everything else syncing
       if (e.status === 401 || !navigator.onLine) throw e;
+      if (t === 'timers' && e.status === 404) continue; // migration 0008 not applied yet: timers stay on each device
       tableErrors[t] = e.message; continue;
     }
     delete tableErrors[t];
@@ -183,9 +225,48 @@ async function pull() {
     // remove babies we can no longer see (revoked / deleted elsewhere)
     // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
     for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) forgetBabyLocally(s, id, me);
+    pruneFinishedTimers(s);
     s.lastSyncedAt = new Date().toISOString();
   }, false);
 }
+
+// ---------- realtime ----------
+// Supabase Realtime (Phoenix websocket protocol) is used only as a "a sleep or timer changed" signal: it triggers a normal
+// sync, so row-level security, merging and cursors stay in one place. Polling every 15 s remains the fallback.
+let ws: WebSocket | null = null; let wsRef = 0; let wsBeat: any = null; let wsRetry = 0; let wsToken = '';
+let pokeTimer: any = null;
+const pokeSoon = () => { clearTimeout(pokeTimer); pokeTimer = setTimeout(() => cycle(), 400); };
+function startRealtime() {
+  if (ws || !auth || typeof WebSocket === 'undefined' || !navigator.onLine) return;
+  const sock = new WebSocket(`${URL_.replace(/^http/, 'ws')}/realtime/v1/websocket?apikey=${encodeURIComponent(KEY)}&vsn=1.0.0`);
+  ws = sock;
+  // one channel per table, so a table that isn't there yet (before migration 0008) can't stop the other
+  const topics: [string, string][] = [['realtime:bebig-sleeps', 'sleep_entries'], ['realtime:bebig-timers', 'running_timers']];
+  const send = (t: string, event: string, payload: any) => { if (sock.readyState === 1) sock.send(JSON.stringify({ topic: t, event, payload, ref: String(++wsRef) })); };
+  sock.onopen = async () => {
+    wsToken = await token().catch(() => '');
+    if (!wsToken) return sock.close();
+    for (const [topic, table] of topics) send(topic, 'phx_join', { config: { broadcast: { self: false }, presence: { key: '' }, postgres_changes: [{ event: '*', schema: 'public', table }] }, access_token: wsToken });
+    wsBeat = setInterval(async () => {
+      send('phoenix', 'heartbeat', {});
+      const t = await token().catch(() => ''); // keep the channel's sign-in fresh
+      if (t && t !== wsToken) { wsToken = t; for (const [topic] of topics) send(topic, 'access_token', { access_token: t }); }
+    }, 25000);
+  };
+  sock.onmessage = m => {
+    try {
+      const j = JSON.parse(m.data);
+      if (j.event === 'phx_reply' && j.payload?.status === 'ok') wsRetry = 0;
+      if (j.event === 'postgres_changes') pokeSoon();
+    } catch { /* ignore */ }
+  };
+  sock.onerror = () => sock.close();
+  sock.onclose = () => {
+    clearInterval(wsBeat); if (ws === sock) ws = null;
+    if (auth && document.visibilityState === 'visible') setTimeout(startRealtime, Math.min(60000, 2000 * 2 ** wsRetry++));
+  };
+}
+function stopRealtime() { const s = ws; ws = null; clearInterval(wsBeat); s?.close(); }
 
 let timer: any = null;
 let syncError: string | null = null;
@@ -226,14 +307,14 @@ export function startRemoteSync() {
       return { user_id: j.user.id, email: j.user.email, display_name: j.user.user_metadata?.display_name || email.split('@')[0] };
     },
     async reset(email, captchaToken) { await gotrue('recover', { email, ...captcha(captchaToken) }); },
-    async signOut() { try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
+    async signOut() { stopRealtime(); try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name: display_name.slice(0, 80) }, 'return=minimal'); },
     async leaveBaby(baby_id) {
       try { await rest('POST', 'rpc/leave_baby', { b: baby_id }); }
       catch (e: any) { throw new Error(e.status === 404 ? 'Leaving isn’t available yet — ask the profile owner to remove you.' : e.message || 'Couldn’t leave. Check your connection and try again.'); }
     },
-    onSignedIn() { syncAiConsent(); setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); },
+    onSignedIn() { syncAiConsent(); setInitialPullDone(false); setTimeout(() => setInitialPullDone(true), 12000); for (const k of Object.keys(cursors)) delete cursors[k]; retryFailedSync(); cycle(); startRealtime(); },
   });
   // links from auth emails land here with tokens (or an error) in the URL hash
   const h = new URLSearchParams(location.hash.slice(1));
@@ -281,14 +362,23 @@ export function startRemoteSync() {
     }, 300);
   }
   const kick = () => cycle();
-  window.addEventListener('online', kick);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') kick(); });
+  window.addEventListener('online', () => { kick(); startRealtime(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { kick(); startRealtime(); } });
+  // timer taps go out straight away (and the result comes back), not on the next tick
+  let lastTap: string | undefined;
+  subscribe(() => {
+    const ob = getState().outbox; let tap: string | undefined; // only a new tap triggers this, so failures can't loop
+    for (let i = ob.length - 1; i >= 0 && !tap; i--) if (ob[i].action) tap = ob[i].op_id;
+    if (!tap || tap === lastTap) return;
+    lastTap = tap;
+    if (auth && navigator.onLine) setTimeout(() => cycle(), 0);
+  });
   let debounce: any;
   setInterval(() => { if (getState().outbox.length && !pushing) { clearTimeout(debounce); debounce = setTimeout(push, 300); } }, 1000);
   timer = setInterval(kick, 15000);
   // changes the server rejected (e.g. before a database update was applied) are retried every 5 minutes
   setInterval(() => { if (auth && navigator.onLine && getState().syncFailed?.length) { retryFailedSync(); kick(); } }, 5 * 60000);
-  if (auth) { syncAiConsent(); if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); }
+  if (auth) { syncAiConsent(); if (getState().syncFailed?.length) retryFailedSync(); setTimeout(() => setInitialPullDone(true), 12000); kick(); startRealtime(); }
   else if (currentUserId()) {
     // looks signed in on this device, but there is no server session (e.g. signed up before cloud sync existed):
     // ask to sign in again so the data can sync — nothing local is deleted
