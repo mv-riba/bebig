@@ -13,7 +13,7 @@ const { weakPasswordMessage } = await import('../src/lib/supabase.ts');
 
 test('character rule gives a short message', () => {
   const m = weakPasswordMessage({ error_code: 'weak_password', msg: 'Password should contain at least one character of each: abcdef...', weak_password: { reasons: ['characters'] } });
-  assert.match(m!, /mix upper and lower case letters, a number and a symbol/);
+  assert.match(m!, /at least 8 characters, include upper and lower case letters, a number, and a symbol/);
   assert.doesNotMatch(m!, /abcdef/);
 });
 test('leaked and length reasons', () => {

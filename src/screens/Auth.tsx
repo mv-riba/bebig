@@ -61,7 +61,7 @@ export function AuthScreen() {
         {mode === 'reset' && <h2>Reset password</h2>}
         {mode === 'register' && <Field label="Your name"><input autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Sanne" /></Field>}
         <Field label="Email"><input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></Field>
-        {!(mode === 'reset' && remoteMode) && <Field label={mode === 'reset' ? 'New password' : 'Password'} hint={mode !== 'signin' ? '(at least 8 characters)' : undefined}>
+        {!(mode === 'reset' && remoteMode) && <Field label={mode === 'reset' ? 'New password' : 'Password'} hint={mode !== 'signin' ? '(8+ characters, upper and lower case, a number and a symbol)' : undefined}>
           <input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={mode === 'signin' ? 1 : 8} value={pw} onChange={e => setPw(e.target.value)} />
         </Field>}
         {mode === 'register' && <label className="consent"><input type="checkbox" required />

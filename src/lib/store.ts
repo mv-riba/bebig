@@ -183,7 +183,7 @@ export function adoptRemoteUser(u: { user_id: string; email: string; display_nam
 export async function register(email: string, password: string, display_name: string, captchaToken?: string) {
   email = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Please enter a valid email address.');
-  if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+  if (password.length < 8) throw new Error('Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol.');
   if (remote) return adoptRemoteUser(await remote.register(email, password, display_name.trim(), captchaToken));
   if (Object.values(state.users).some(u => u.email === email)) throw new Error('An account with this email already exists.');
   const user_id = uuid(); const salt = uuid(); const hash = await hashPw(password, salt); const t = nowIso();
@@ -215,7 +215,7 @@ export async function resetPassword(email: string, newPassword: string, captchaT
   if (remote) return remote.reset(email, captchaToken);
   const c = state.credentials[email];
   if (!c) return; // never reveal whether an account exists
-  if (newPassword.length < 8) throw new Error('Password must be at least 8 characters.');
+  if (newPassword.length < 8) throw new Error('Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol.');
   const salt = uuid(); const hash = await hashPw(newPassword, salt);
   setState(s => { s.credentials[email] = { ...c, salt, hash }; s.audit.push({ at: nowIso(), user_id: c.user_id, action: 'auth.password_reset' }); });
 }
