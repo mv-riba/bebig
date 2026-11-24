@@ -4,4 +4,4 @@
 //   app_settings.early_access_until decides; this value is only the offline/local-mode fallback.
 //   turnstileSiteKey (bebig.config.json) — Cloudflare Turnstile CAPTCHA on sign-in, sign-up and password reset (cloud only).
 declare const __BEBIG_CONFIG__: { supabaseUrl: string; supabaseAnonKey: string; version: string; earlyAccessUntil?: string; turnstileSiteKey?: string };
-export const config = typeof __BEBIG_CONFIG__ !== 'undefined' ? __BEBIG_CONFIG__ : { supabaseUrl: '', supabaseAnonKey: '', version: 'dev', earlyAccessUntil: '2027-03-31T21:00:00Z' };
+export const config = typeof __BEBIG_CONFIG__ !== 'undefined' ? __BEBIG_CONFIG__ : { supabaseUrl: '', supabaseAnonKey: '', version: 'dev', earlyAccessUntil: '2026-12-31T22:00:00Z' };
