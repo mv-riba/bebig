@@ -24,7 +24,8 @@ fs.cpSync('public', out, { recursive: true });
 // PNG app icons are rendered from public/icon.svg at build time (keeps the repo text-only)
 // "any" icons come from icon.svg; "maskable" ones (Android adaptive icons, the Play app's launcher icon)
 // from icon-maskable.svg, which keeps the artwork inside the safe zone so no launcher mask crops it
-const icons = [['icon', 'public/icon.svg'], ['icon-maskable', 'public/icon-maskable.svg']];
+// icon-splash.svg: just the moon on a transparent background, for the Android app's launch screen (not in the web manifest)
+const icons = [['icon', 'public/icon.svg'], ['icon-maskable', 'public/icon-maskable.svg'], ['icon-splash', 'public/icon-splash.svg']];
 for (const [name, src] of icons) for (const size of [192, 512]) {
   const dest = path.join(out, `${name}-${size}.png`);
   if (fs.existsSync(dest)) continue;
