@@ -16,7 +16,7 @@ import type { FeedingPreference } from '../lib/types';
 import { usePlus, PlusBadge, PlusLink, PlusNote, chooseFreeCaregiver } from '../ui/plus';
 import { BabySwitcher } from '../ui/babies';
 import { memberState, pausedWhenPlusEnds, freeSlotId, LIMITS } from '../lib/plans';
-import { checkBirthDetails, csvSafe } from '../lib/validate';
+import { checkBirthDetails, csvSafe, babyNameError, BABY_NAME_MAX } from '../lib/validate';
 
 const PREF_LABEL: Record<FeedingPreference, string> = { breast: 'Breastfed', formula: 'Formula fed', combination: 'Combination fed' };
 
@@ -38,7 +38,7 @@ export function Settings() {
       <header className="screen-head"><span /><h1>Settings</h1><span /></header>
       <button className="card profile-card" onClick={go({ name: 'profile' })}>
         <BabyAvatar src={baby.photograph_url} name={baby.name} size={72} />
-        <span className="row-main"><span className="row-title big">{baby.name}</span><span className="row-sub">Born {formatDateKey(baby.date_of_birth, 'long')}<br />({describeAge(age)})</span></span>
+        <span className="row-main"><span className="row-title big name-clamp">{baby.name}</span><span className="row-sub">Born {formatDateKey(baby.date_of_birth, 'long')}<br />({describeAge(age)})</span></span>
         <IChevron />
       </button>
       <button className="link" onClick={() => setSwitching(true)}>{babies.length > 1 ? `Switch baby (${babies.length} profiles) or add one` : 'Add another baby'}</button>
@@ -85,7 +85,8 @@ export function ProfileEdit({ onBack }: { onBack: () => void }) {
     setErr(null);
     if (!f.name.trim()) return setErr('Please enter a name.');
     if (!f.date_of_birth || f.date_of_birth > todayKey(f.timezone)) return setErr('Please enter a valid date of birth.');
-    if (f.name.trim().length > 80) return setErr('Please keep the name under 80 characters.');
+    const nameErr = babyNameError(f.name);
+    if (nameErr) return setErr(nameErr);
     const birth = checkBirthDetails(f);
     if (!birth.ok) return setErr(birth.error);
     if (f.timezone !== b.timezone && !(await confirm({ title: 'Change time zone?', text: 'All times and daily totals will be shown in the new zone. Recorded moments stay the same.', ok: 'Change' }))) return;
@@ -99,7 +100,7 @@ export function ProfileEdit({ onBack }: { onBack: () => void }) {
         <label className="btn soft small">Change photo<input type="file" accept="image/*" hidden onChange={e => onPhoto(e.target.files?.[0])} /></label>
         {b.photograph_url && <button className="link small" onClick={() => updateBaby(b.baby_id, { photograph_url: null })}>Remove</button>}
       </div>
-      <Field label="Name"><input value={f.name} onChange={set('name')} /></Field>
+      <Field label="Name"><input value={f.name} maxLength={BABY_NAME_MAX} onChange={set('name')} /></Field>
       <div className="two"><Field label="Date of birth"><input type="date" value={f.date_of_birth} onChange={set('date_of_birth')} /></Field><Field label="Time of birth" hint="(optional)"><input type="time" value={f.time_of_birth} onChange={set('time_of_birth')} /></Field></div>
       <Field label="Sex" hint="(used for WHO growth references)"><Segmented label="Sex" value={f.sex} onChange={v => setF({ ...f, sex: v })} options={[{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }]} /></Field>
       <Field label="Time zone"><TzSelect value={f.timezone} onChange={v => setF({ ...f, timezone: v })} /></Field>
