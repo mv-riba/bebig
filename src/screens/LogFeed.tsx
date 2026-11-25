@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId, earliestTimerEnd } from '../lib/store';
+import { StillCheck } from '../ui/still';
 import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, dayStart, zonedParts } from '../lib/time';
 import type { FeedingEntry, FeedingType } from '../lib/types';
@@ -49,17 +50,19 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
   const timer = !existing && type === 'breast' ? feedTimer : null;
   const totals = timer ? feedTimerTotals(timer, now) : null;
 
-  const save = async (fromTimer = false) => {
+  /** endAt: when a timer feed really finished ("Finished earlier"); default now */
+  const save = async (fromTimer = false, endAt?: string) => {
     setErr(null);
     try {
       let row: Partial<FeedingEntry> = { baby_id: baby.baby_id, feeding_type: type, observations: obs, notes: notes.trim() || null };
       if (existing) row.feed_id = existing.feed_id;
       if (fromTimer && timer) {
-        const t = feedTimerTotals(timer);
+        const endMs = endAt ? Date.parse(endAt) : Date.now();
+        const t = feedTimerTotals(timer, endMs);
         // the database keeps feeds up to 4 hours; a longer timer was almost certainly left running
         if (t.total > MAX_FEED_SECONDS) throw new Error('This timer has run for over 4 hours — it was probably left running. Discard it and enter the feed manually.');
         const sided = t.left + t.right > 0;
-        row = { ...row, start_datetime: timer.started_at, end_datetime: new Date().toISOString(), duration_seconds: Math.round(t.total),
+        row = { ...row, start_datetime: timer.started_at, end_datetime: new Date(endMs).toISOString(), duration_seconds: Math.round(t.total),
           breast_side: t.left > 0 && t.right > 0 ? 'both' : t.left > 0 ? 'left' : t.right > 0 ? 'right' : null,
           left_duration_seconds: sided ? Math.round(t.left) : null, right_duration_seconds: sided ? Math.round(t.right) : null, quantity_ml: null };
       } else {
@@ -88,7 +91,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
         if (like && !(await confirm(similarQuestion(like, `a ${row.feeding_type === 'breast' ? 'breastfeed' : row.feeding_type === 'formula' ? 'formula feed' : 'feed of expressed milk'}`, formatTime((like.e as FeedingEntry).start_datetime, tz, s.prefs[currentUserId() ?? '']?.time_format), s.users, currentUserId())))) return;
       }
       // from the timer: saved together with the Stop, so two caregivers stopping it can't save the feed twice
-      const id = fromTimer ? stopFeedTimer(baby.baby_id, row) : upsertEntry('feeds', row);
+      const id = fromTimer ? stopFeedTimer(baby.baby_id, row, endAt) : upsertEntry('feeds', row);
       if (!id) throw new Error('This timer has already been stopped.');
       toast(existing ? 'Feed updated' : 'Feed saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('feeds', id) });
       onDone();
@@ -119,6 +122,12 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
             </>
           ) : (
             <>
+              <StillCheck kind="feed" id={timer.timer_id} startedAt={timer.started_at} earliestEnd={earliestTimerEnd(timer)} tz={tz} fmt={ctx.prefs.time_format} now={now}
+                onEnded={iso => {
+                  // checked here so the message shows in the card, next to the time that needs changing
+                  if (feedTimerTotals(timer, Date.parse(iso)).total > MAX_FEED_SECONDS) throw new Error('A feed can be at most 4 hours. Choose an earlier end, or discard the timer and enter the feed by hand.');
+                  save(true, iso);
+                }} />
               <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
               <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
               {timerStartedBy(timer) && <div className="muted small">Started by {timerStartedBy(timer)} · {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>}

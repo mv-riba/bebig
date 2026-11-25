@@ -204,7 +204,22 @@ test('time zone note: shown only when the phoneâ€™s clock differs from the babyâ
   const winter = new Date('2026-11-25T10:00:00Z');
   assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/Helsinki'), null);
   assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/Riga'), null, 'same clock time, different name');
-  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/London'), 'Times are in Helsinki time, 2 h ahead of this phone.');
-  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Asia/Kolkata'), 'Times are in Helsinki time, 3 h 30 min behind this phone.');
-  assert.equal(tzGapNote('America/New_York', winter, 'Europe/Helsinki'), 'Times are in New York time, 7 h behind this phone.');
+  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/London'), 'Times are in EET, 2 h ahead of this phone.');
+  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Asia/Kolkata'), 'Times are in EET, 3 h 30 min behind this phone.');
+  assert.equal(tzGapNote('America/New_York', winter, 'Europe/Helsinki'), 'Times are in EST, 7 h behind this phone.');
+});
+
+test('time zone abbreviations follow summer time', async () => {
+  const { tzName } = await import('../src/lib/time.ts');
+  const winter = new Date('2026-11-25T10:00:00Z'), summer = new Date('2026-07-01T10:00:00Z');
+  const both = (tz: string) => [tzName(tz, winter), tzName(tz, summer)];
+  assert.deepEqual(both('Europe/London'), ['GMT', 'BST']);
+  assert.deepEqual(both('Europe/Helsinki'), ['EET', 'EEST']);
+  assert.deepEqual(both('Europe/Paris'), ['CET', 'CEST']);
+  assert.deepEqual(both('America/New_York'), ['EST', 'EDT']);
+  assert.deepEqual(both('Australia/Sydney'), ['AEDT', 'AEST']);
+  assert.equal(tzName('Asia/Kolkata', winter), 'IST');
+  assert.equal(tzName('Asia/Tokyo', winter), 'JST');
+  assert.equal(tzName('America/Sao_Paulo', winter), 'GMT-3', 'no abbreviation known: the offset');
+  assert.equal(tzName('Not/A_Zone'), 'A Zone time');
 });

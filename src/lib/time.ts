@@ -154,6 +154,22 @@ export function listTimezones(): string[] {
  *  is shown in the baby's zone (so caregivers abroad and travellers see the same times as everyone else). */
 /** A readable name for an IANA zone: "Europe/Helsinki" → "Helsinki". */
 export const tzCity = (tz: string) => (tz.split('/').pop() || tz).replace(/_/g, ' ');
+/** The zone's abbreviation at that moment, following summer time: GMT / BST, EET / EEST, CET / CEST, EST / EDT,
+ *  IST, AEST / AEDT, JST. Browsers only know an abbreviation in the local English (or Japanese) variant, so several are
+ *  tried; where none has one, the offset is used instead (e.g. "GMT-3" for São Paulo). */
+const ABBR_LOCALES = ['en-GB', 'en-US', 'en-IN', 'en-AU', 'en-NZ', 'ja-JP'];
+export function tzName(tz: string, at = new Date()): string {
+  let offset = '';
+  for (const loc of ABBR_LOCALES) {
+    try {
+      const n = new Intl.DateTimeFormat(loc, { timeZone: tz, timeZoneName: 'short' }).formatToParts(at).find(p => p.type === 'timeZoneName')?.value;
+      if (!n) continue;
+      if (!/^(GMT|UTC)[+−-]/.test(n)) return n === 'UTC' ? 'GMT' : n;
+      offset ||= n.replace('−', '-');
+    } catch { return `${tzCity(tz)} time`; } // unknown zone
+  }
+  return offset || `${tzCity(tz)} time`;
+}
 export function tzGapNote(babyTz: string, now = new Date(), deviceTz = guessTimezone()): string | null {
   if (!babyTz || babyTz === deviceTz) return null;
   let diffMin: number;
@@ -161,6 +177,5 @@ export function tzGapNote(babyTz: string, now = new Date(), deviceTz = guessTime
   if (!diffMin) return null;
   const a = Math.abs(diffMin), h = Math.floor(a / 60), m = a % 60;
   const gap = h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`;
-  const city = tzCity(babyTz);
-  return `Times are in ${city} time, ${gap} ${diffMin > 0 ? 'ahead of' : 'behind'} this phone.`;
+  return `Times are in ${tzName(babyTz, now)}, ${gap} ${diffMin > 0 ? 'ahead of' : 'behind'} this phone.`;
 }

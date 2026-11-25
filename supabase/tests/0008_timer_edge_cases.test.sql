@@ -106,4 +106,12 @@ select 'late side resume: pause at 0:10, late resume at 0:05, stop' as t,
   and timer_side('55555555-0000-0000-0000-0000000000e2', 'right', now() - interval '12 minutes')->>'outcome' = 'side'
   and timer_stop('55555555-0000-0000-0000-0000000000e2', now(), '66666666-0000-0000-0000-0000000000e2')->>'outcome' = 'stopped' as ok;
 select 'late side resume: total never exceeds the time that passed' as t, pg_temp.total('55555555-0000-0000-0000-0000000000e2') <= 20*60 as ok;
+-- "Finished earlier" / "Woke up earlier": a stop with an earlier end time counts only up to that time
+select 'feed left on 2 h, finished after 25 min: 25 min counted' as t,
+  timer_start('55555555-0000-0000-0000-0000000000f1','11111111-0000-0000-0000-00000000000b','extra','33333333-0000-0000-0000-0000000000b2',null, now() - interval '2 hours')->>'outcome' = 'started'
+  and (timer_stop('55555555-0000-0000-0000-0000000000f1', now() - interval '95 minutes', '66666666-0000-0000-0000-0000000000f1')->'row'->>'unsided_seconds')::float = 25*60 as ok;
+select 'sleep left on 14 h, woke after 6 h: 6 h saved' as t,
+  sleep_start('44444444-0000-0000-0000-0000000000f1','11111111-0000-0000-0000-00000000000b', now() - interval '14 hours')->>'outcome' in ('started','joined') as ok;
+select 'sleep left on: stop at the real wake-up time' as t, (j->>'outcome') = 'stopped' and (j->'row'->>'end_datetime')::timestamptz = (j->'row'->>'start_datetime')::timestamptz + interval '6 hours' as ok
+  from (select sleep_stop(x.sleep_id, x.start_datetime + interval '6 hours') j from sleep_entries x where baby_id = '11111111-0000-0000-0000-00000000000b' and status <> 'completed' and deleted_at is null) y;
 rollback;

@@ -371,3 +371,6 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .tl-dup { display: inline-block; margin-top: 2px; font-size: 12px; font-weight: 700; color: #9a5a1e; background: #fbe9d7; border-radius: 999px; padding: 1px 8px; }
 .tz-ask { margin-top: 6px; }
 .tz-ask .btn-row { margin-top: 6px; gap: 8px; }
+.still-card { border: 1px solid var(--plus, #e0b25a); margin-bottom: 12px; text-align: left; }
+.still-card h3 { margin: 0 0 4px; }
+.still-card .btn-row { margin-top: 10px; }

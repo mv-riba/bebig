@@ -9,10 +9,11 @@ import { TrialNudge } from '../ui/plus';
 import { BabySwitcher, OtherBabiesTimers } from '../ui/babies';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
-import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween, tzGapNote, tzCity, guessTimezone } from '../lib/time';
+import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween, tzGapNote, tzName, guessTimezone } from '../lib/time';
 import { sleepElapsed, sleepTimerTooLong, feedTimerTotals, useStore, currentUserId, roleFor, updateBaby } from '../lib/store';
 import { SyncBadge } from '../ui/SyncBadge';
 import type { BabyProfile } from '../lib/types';
+import { stillDue } from '../lib/still';
 
 export function BabyAvatar({ src, name, size = 64 }: { src?: string | null; name: string; size?: number }) {
   return src ? <img className="avatar" src={src} alt={`${name}`} width={size} height={size} style={{ width: size, height: size }} />
@@ -57,7 +58,7 @@ export function Home() {
         <button className={`sum-card sum-feed ${feedTimer ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'feed' })} aria-label={feedTimer ? `Breastfeeding timer ${feedTimer.segment_started_at ? 'running' : 'paused'} since ${formatTime(feedTimer.started_at, tz, fmt)}. Open timer` : lf ? `Last feed ${formatTime(lf.start_datetime, tz, fmt)}, ${formatAgo(lf.start_datetime, now)}. Log feed` : 'No feeds yet. Log feed'}>
           <span className="sum-ic">{feedTimer || lf?.feeding_type === 'breast' ? <IBreast size={30} /> : <IBottle size={30} />}</span>
           <span className="sum-label">{feedTimer ? <>{feedTimer.segment_started_at && <span className="pulse" aria-hidden="true" />} {feedTimer.segment_started_at ? 'Feeding' : 'Feed paused'}</> : 'Feed'}</span>
-          {feedTimer ? <><span className="sum-time">{formatDuration(feedTimerTotals(feedTimer, now).total, true)}</span><span className="sum-ago">since {formatTime(feedTimer.started_at, tz, fmt)}</span></>
+          {feedTimer ? <><span className="sum-time">{formatDuration(feedTimerTotals(feedTimer, now).total, true)}</span><span className="sum-ago">{stillDue('feed', feedTimer.timer_id, feedTimer.started_at, now) ? 'Still feeding?' : `since ${formatTime(feedTimer.started_at, tz, fmt)}`}</span></>
             : lf ? <><span className="sum-time">{formatTime(lf.start_datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lf.start_datetime, now)})</span></> : <span className="sum-ago">No feeds yet</span>}
         </button>
         <button className="sum-card sum-poo" onClick={() => nav.push({ name: 'poo' })} aria-label={lp ? `Last ${nappy ? 'nappy' : 'poo'} ${formatTime(lp.datetime, tz, fmt)}, ${formatAgo(lp.datetime, now)}. Log ${nappy ? 'nappy' : 'poo'}` : `No ${nappy ? 'nappies' : 'poos'} yet. Log ${nappy ? 'nappy' : 'poo'}`}>
@@ -69,7 +70,7 @@ export function Home() {
         <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended at ${formatTime(ls.end_datetime!, tz, fmt)}, awake ${formatAgo(ls.end_datetime!, now).replace(' ago', '')}. Log sleep` : 'No sleep yet. Log sleep'}>
           <span className="sum-ic"><IMoon size={30} /></span>
           <span className="sum-label">{active ? <><span className="pulse" aria-hidden="true" /> Sleeping</> : 'Sleep'}</span>
-          {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">{sleepTimerTooLong(active, now) ? 'Over 24 h · tap to fix' : `since ${formatTime(active.start_datetime, tz, fmt)}`}</span></>
+          {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">{sleepTimerTooLong(active, now) ? 'Over 24 h · tap to fix' : stillDue('sleep', active.sleep_id, active.start_datetime, now) ? 'Still sleeping?' : `since ${formatTime(active.start_datetime, tz, fmt)}`}</span></>
             : ls ? <><span className="sum-time">{formatTime(ls.end_datetime!, tz, fmt)}</span><span className="sum-ago">awake {formatAgo(ls.end_datetime!, now).replace(' ago', '')}</span></> : <span className="sum-ago">None yet</span>}
         </button>
       </section>
@@ -115,14 +116,15 @@ function TravelPrompt({ baby, note }: { baby: BabyProfile; note: string }) {
   const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem(key) === here; } catch { return false; } });
   if (roleFor(baby.baby_id) !== 'owner' || dismissed) return <p className="muted small tz-note">{note}</p>;
   const notNow = () => { try { localStorage.setItem(key, here); } catch { /* private mode: ask again next time */ } setDismissed(true); };
+  const name = tzName(here);
   const sw = async () => {
-    if (!(await confirm({ title: `Switch to ${tzCity(here)} time?`, text: `${baby.name}’s times will be shown in ${tzCity(here)} time for everyone who follows ${baby.name}. Past days are regrouped by ${tzCity(here)} days, so some daily totals change. Recorded moments stay the same, and you can switch back any time.`, ok: 'Switch' }))) return;
-    updateBaby(baby.baby_id, { timezone: here }); toast(`Now showing ${tzCity(here)} time`);
+    if (!(await confirm({ title: `Switch to ${name}?`, text: `${baby.name}’s times will be shown in ${name} for everyone who follows ${baby.name}. Past days are regrouped by the new midnight, so some daily totals change. Recorded moments stay the same, and you can switch back any time.`, ok: 'Switch' }))) return;
+    updateBaby(baby.baby_id, { timezone: here }); toast(`Now showing ${name}`);
   };
   return (
     <div className="tz-ask">
-      <p className="muted small">You seem to be in {tzCity(here)} time. {note}</p>
-      <div className="btn-row"><button className="btn small soft" onClick={sw}>Use {tzCity(here)} time</button><button className="link small" onClick={notNow}>Not now</button></div>
+      <p className="muted small">This phone is on {name}. {note}</p>
+      <div className="btn-row"><button className="btn small soft" onClick={sw}>Switch to {name}</button><button className="link small" onClick={notNow}>Not now</button></div>
     </div>
   );
 }
