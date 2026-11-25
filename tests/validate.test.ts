@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkBirthDetails, parseDecimal, csvSafe } from '../src/lib/validate.ts';
+import { checkBirthDetails, parseDecimal, csvSafe, babyNameError, BABY_NAME_MAX } from '../src/lib/validate.ts';
 import { fromLocalInput } from '../src/lib/time.ts';
 
 const empty = { ga_w: '', ga_d: '', bw: '', bl: '', bh: '' };
@@ -35,4 +35,12 @@ test('a cleared date/time field gives a readable error', () => {
   assert.throws(() => fromLocalInput('', 'Europe/Helsinki'), /valid date and time/);
   assert.throws(() => fromLocalInput('2026-11-22T', 'Europe/Helsinki'), /valid date and time/);
   assert.equal(fromLocalInput('2026-11-22T10:30', 'Europe/Helsinki'), '2026-11-22T08:30:00.000Z');
+});
+
+test('baby name: up to 40 characters, with a message that states the limit', () => {
+  assert.equal(BABY_NAME_MAX, 40);
+  assert.equal(babyNameError('Emma'), null);
+  assert.equal(babyNameError('a'.repeat(40)), null);
+  assert.equal(babyNameError(`  ${'a'.repeat(40)}  `), null);
+  assert.equal(babyNameError('a'.repeat(41)), 'Please keep the name to 40 characters or fewer.');
 });

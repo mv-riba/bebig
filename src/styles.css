@@ -111,6 +111,8 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .row-ic { width: 36px; display: grid; place-items: center; color: var(--ink-2); flex: none; }
 .row-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .row-title { font-weight: 700; } .row-title.big { font-size: 1.2rem; }
+/* baby names: long words wrap instead of running off the card; at most 2 lines */
+.name-clamp { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .row-sub { color: var(--muted); font-size: .86rem; }
 .list { padding-top: 2px; padding-bottom: 2px; }
 .empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 26px 18px; color: var(--muted); gap: 6px; background: var(--card); border-radius: var(--r); border: 1.5px dashed var(--line); }
@@ -254,6 +256,7 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 
 /* ---------- Settings ---------- */
 .profile-card { display: flex; gap: 16px; align-items: center; text-align: left; padding: 16px; }
+.profile-card > svg { flex: none; }
 .kv { display: flex; flex-direction: column; cursor: pointer; width: 100%; text-align: left; }
 .kv em { font-style: normal; font-weight: 500; } .kv-hint { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--line); color: var(--accent-d); font-size: .86rem; font-weight: 600; }
 .form-section { display: flex; flex-direction: column; gap: 12px; } .kv > div { display: flex; justify-content: space-between; padding: 6px 0; } .kv span { color: var(--ink-2); }
@@ -312,10 +315,10 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 
 .timer-bar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; border-radius: 18px; background: var(--lav-l); border: 1px solid var(--lav); text-align: left; }
 .tile-ic.sm { width: 36px; height: 36px; background: #fff; }
-.timer-bar-clock { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.timer-bar-clock { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; flex: none; }
 .timer-bar.other-baby { background: var(--card, #fff); border-style: dashed; }
 .running-now { color: var(--accent-d); font-weight: 700; }
-.timer-bar-stop { font-weight: 800; color: var(--accent-d); padding-left: 4px; }
+.timer-bar-stop { font-weight: 800; color: var(--accent-d); padding-left: 4px; flex: none; }
 
 .diag { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
 .diag pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: .72rem; background: var(--cream-2); padding: 10px; border-radius: 12px; max-height: 320px; overflow: auto; }
@@ -349,14 +352,14 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .kind-plus .link { display: inline-flex; margin-top: 6px; }
 
 /* ---------- Baby switcher ---------- */
-.baby-switch { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--accent-d); padding: 2px 0; }
-.baby-switch .chev-down { transform: rotate(90deg); }
+.baby-switch { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; color: var(--accent-d); padding: 2px 0; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.baby-switch .chev-down { flex: none; transform: rotate(90deg); }
 .home-head .avatar-btn { border-radius: 50%; flex: none; }
 .baby-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .baby-pick { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--line); text-align: left; width: 100%; }
 .baby-pick.on { border-color: var(--accent); background: var(--accent-xl); }
 .baby-pick.paused { opacity: .6; }
-.baby-pick .row-main { flex: 1; display: flex; flex-direction: column; }
+.baby-pick .row-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .pick-check { color: var(--accent-d); }
 .avatar-ph.paused { opacity: .5; }
 .captcha { min-height: 65px; }

@@ -10,6 +10,14 @@ export function parseDecimal(v: string): number | null {
   return Number.isFinite(n) ? n : NaN;
 }
 
+/** Longest baby name the app accepts. The database allows 80 (0001_init); 40 keeps names readable on every card. */
+export const BABY_NAME_MAX = 40;
+
+/** Error message for a baby name that's too long, or null if it's fine. Assumes the name isn't empty. */
+export function babyNameError(name: string): string | null {
+  return name.trim().length > BABY_NAME_MAX ? `Please keep the name to ${BABY_NAME_MAX} characters or fewer.` : null;
+}
+
 export interface BirthInput { ga_w: string; ga_d: string; bw: string; bl: string; bh: string }
 export interface BirthDetails {
   gestational_age_weeks: number | null; gestational_age_days: number | null;

@@ -7,7 +7,7 @@ import { guessTimezone, todayKey } from '../lib/time';
 import { TzSelect, resizeImage } from './Settings';
 import { syncMode } from '../lib/sync';
 import type { FeedingPreference, Sex } from '../lib/types';
-import { checkBirthDetails } from '../lib/validate';
+import { checkBirthDetails, babyNameError, BABY_NAME_MAX } from '../lib/validate';
 import { Captcha, captchaEnabled } from '../ui/Captcha';
 
 export function Logo({ size = 44 }: { size?: number }) {
@@ -106,7 +106,8 @@ export function Onboarding({ onDone }: { onDone?: () => void } = {}) {
     if (!f.name.trim()) return setErr('Please enter your baby’s name.');
     if (!f.dob || f.dob > todayKey(f.tz)) return setErr('Please enter a valid date of birth.');
     if (!f.sex) return setErr('Please choose the sex used for growth references.');
-    if (f.name.trim().length > 80) return setErr('Please keep the name under 80 characters.');
+    const nameErr = babyNameError(f.name);
+    if (nameErr) return setErr(nameErr);
     // same limits as the database, so the profile can't get stuck unsynced
     const birth = checkBirthDetails({ ga_w: f.gaw, ga_d: f.gad, bw: f.bw, bl: f.bl, bh: f.bh });
     if (!birth.ok) return setErr(birth.error);
@@ -126,7 +127,7 @@ export function Onboarding({ onDone }: { onDone?: () => void } = {}) {
           <span className="link small">Add photo (optional)</span>
           <input type="file" accept="image/*" hidden onChange={e => e.target.files?.[0] && resizeImage(e.target.files[0]).then(setPhoto)} />
         </label>
-        <Field label="Baby’s name"><input value={f.name} onChange={set('name')} placeholder="First or preferred name" /></Field>
+        <Field label="Baby’s name"><input value={f.name} maxLength={BABY_NAME_MAX} onChange={set('name')} placeholder="First or preferred name" /></Field>
         <div className="two"><Field label="Date of birth"><input type="date" max={todayKey(f.tz)} value={f.dob} onChange={set('dob')} /></Field><Field label="Time of birth" hint="(optional)"><input type="time" value={f.tob} onChange={set('tob')} /></Field></div>
         <Field label="Sex" hint="(for WHO growth references)"><Segmented label="Sex" value={f.sex || null} onChange={v => setF({ ...f, sex: v })} options={[{ value: 'female', label: 'Female' }, { value: 'male', label: 'Male' }]} /></Field>
         <Field label="Time zone"><TzSelect value={f.tz} onChange={v => setF({ ...f, tz: v })} /></Field>

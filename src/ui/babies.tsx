@@ -27,7 +27,7 @@ export function BabySwitcher({ open, onClose }: { open: boolean; onClose: () => 
           return (
             <button key={b.baby_id} role="listitem" className={`baby-pick ${on ? 'on' : ''}`} aria-current={on ? 'true' : undefined} onClick={() => pick(b.baby_id, b.name)}>
               <BabyAvatar src={b.photograph_url} name={b.name} size={44} />
-              <span className="row-main"><span className="row-title">{b.name}</span>
+              <span className="row-main"><span className="row-title name-clamp">{b.name}</span>
                 <span className="row-sub">{describeAge(daysBetween(b.date_of_birth, todayKey(b.timezone)))} · {roleFor(b.baby_id) === 'owner' ? 'Your profile' : 'Shared with you'}</span>
                 {running[b.baby_id]?.length ? <span className="row-sub running-now">● {describeRunning(running[b.baby_id])}</span> : null}</span>
               {on && <ICheck className="pick-check" />}
@@ -68,7 +68,7 @@ export function OtherBabiesTimers() {
   return <>{others.map(({ b, r }) => (
     <button key={b.baby_id} className="timer-bar other-baby" onClick={() => { selectBaby(b.baby_id); toast(`Showing ${b.name}`); }} aria-label={`${b.name}: ${describeRunning(r)}. Switch to ${b.name}`}>
       <BabyAvatar src={b.photograph_url} name={b.name} size={32} />
-      <span className="row-main"><span className="row-title">{b.name}</span><span className="row-sub">{r.map(x => x.label).join(' · ')}</span></span>
+      <span className="row-main"><span className="row-title name-clamp">{b.name}</span><span className="row-sub">{r.map(x => x.label).join(' · ')}</span></span>
       <span className="timer-bar-clock">{formatClock(r[0].secs)}</span><span className="timer-bar-stop">Switch</span>
     </button>))}</>;
 }
