@@ -447,6 +447,8 @@ export function upsertEntry<K extends Kind>(table: K, row: any, action?: SleepAc
 export function deleteEntry(table: Kind, id: string) {
   const row = (state[table] as any)[id]; if (!row) return;
   assertAccess(row.baby_id);
+  // a deleted tracker's running timer would keep running out of sight (and block that tracker on every phone)
+  if (table === 'trackers') discardExtraTimer(id);
   setState(s => {
     const x = (s[table] as any)[id];
     x.deleted_at = nowIso(); x.updated_at = x.deleted_at; x.updated_by = currentUserId();

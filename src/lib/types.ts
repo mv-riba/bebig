@@ -123,6 +123,7 @@ export interface RunningTimer {
   right_seconds: number;
   unsided_seconds: number;
   segment_started_at: string | null; // start of the current stretch; null while paused
+  paused_at?: string | null; // when it was paused (server, migration 0009): a late Resume can't start before it
   ended_at: string | null; // set once saved or discarded
   end_kind: 'saved' | 'discarded' | null;
   entry_id: ID | null; // the feed / extras entry the winning Stop saved

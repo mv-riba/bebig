@@ -1,7 +1,7 @@
 // Optional, user-enabled reminders (disabled by default — PRD 15). Simple elapsed-time nudges only;
 // never feeding or medical advice. Fire while the app/PWA is running. Background push requires the native app.
 import { useEffect } from 'react';
-import { getState, selectedBaby, myPrefs, live, activeSleep } from './store';
+import { getState, accessibleBabies, myPrefs, live, activeSleep } from './store';
 
 const fired = new Set<string>();
 function notify(key: string, title: string, body: string) {
@@ -15,7 +15,9 @@ function notify(key: string, title: string, body: string) {
 export function useReminders() {
   useEffect(() => {
     const tick = () => {
-      const s = getState(); const b = selectedBaby(s); if (!b) return; const p = myPrefs(s);
+      const s = getState(); const p = myPrefs(s);
+      // every baby, not just the one on screen: a twin's forgotten sleep timer matters as much
+      for (const b of accessibleBabies(s)) {
       if (p.notifications.feeding) {
         const feeds = live(s.feeds, b.baby_id).sort((a, c) => +new Date(a.start_datetime) - +new Date(c.start_datetime));
         const last = feeds[feeds.length - 1];
@@ -25,6 +27,7 @@ export function useReminders() {
       if (p.notifications.sleep) {
         const a = activeSleep(b.baby_id, s);
         if (a && Date.now() - +new Date(a.start_datetime) >= 4 * 3600000) notify('sleep:' + a.sleep_id, 'Bebig', `The sleep timer for ${b.name} has been running for over 4 hours. Did you forget to stop it?`);
+      }
       }
     };
     const id = setInterval(tick, 60000); tick();
