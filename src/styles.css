@@ -315,10 +315,10 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 
 .timer-bar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; border-radius: 18px; background: var(--lav-l); border: 1px solid var(--lav); text-align: left; }
 .tile-ic.sm { width: 36px; height: 36px; background: #fff; }
-.timer-bar-clock { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.timer-bar-clock { font-weight: 800; font-size: 1.15rem; font-variant-numeric: tabular-nums;; flex: none; }
 .timer-bar.other-baby { background: var(--card, #fff); border-style: dashed; }
 .running-now { color: var(--accent-d); font-weight: 700; }
-.timer-bar-stop { font-weight: 800; color: var(--accent-d); padding-left: 4px; }
+.timer-bar-stop { font-weight: 800; color: var(--accent-d); padding-left: 4px;; flex: none; }
 
 .diag { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
 .diag pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: .72rem; background: var(--cream-2); padding: 10px; border-radius: 12px; max-height: 320px; overflow: auto; }
