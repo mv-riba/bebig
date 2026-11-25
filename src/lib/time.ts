@@ -152,6 +152,8 @@ export function listTimezones(): string[] {
 
 /** When this phone's clock is in another time zone than the baby's: a short note, since every time in the app
  *  is shown in the baby's zone (so caregivers abroad and travellers see the same times as everyone else). */
+/** A readable name for an IANA zone: "Europe/Helsinki" → "Helsinki". */
+export const tzCity = (tz: string) => (tz.split('/').pop() || tz).replace(/_/g, ' ');
 export function tzGapNote(babyTz: string, now = new Date(), deviceTz = guessTimezone()): string | null {
   if (!babyTz || babyTz === deviceTz) return null;
   let diffMin: number;
@@ -159,6 +161,6 @@ export function tzGapNote(babyTz: string, now = new Date(), deviceTz = guessTime
   if (!diffMin) return null;
   const a = Math.abs(diffMin), h = Math.floor(a / 60), m = a % 60;
   const gap = h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`;
-  const city = (babyTz.split('/').pop() || babyTz).replace(/_/g, ' ');
+  const city = tzCity(babyTz);
   return `Times are in ${city} time, ${gap} ${diffMin > 0 ? 'ahead of' : 'behind'} this phone.`;
 }

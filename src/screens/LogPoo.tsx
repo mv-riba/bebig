@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Page, Segmented, Field, useToast, Wave } from '../ui/ui';
+import { Page, Segmented, Field, useToast, Wave, useConfirm } from '../ui/ui';
 import { IInfo, ITrash, IDrop, IPoo } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, getState } from '../lib/store';
-import { toLocalInput, fromLocalInput, daysBetween, dateKey } from '../lib/time';
+import { upsertEntry, deleteEntry, restoreEntry, getState, live, currentUserId } from '../lib/store';
+import { similarEntry, similarQuestion } from '../lib/duplicates';
+import { toLocalInput, fromLocalInput, daysBetween, dateKey, formatTime } from '../lib/time';
 import type { PooColour, PooEntry, PooSize, PooTexture, NappyType } from '../lib/types';
 import { defaultTime } from './LogFeed';
 
@@ -29,7 +30,7 @@ export function healthNotice(colour: PooColour | null | undefined, ageDays: numb
 }
 
 export function LogPoo({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast();
+  const ctx = useBaby(); const confirm = useConfirm(); const toast = useToast();
   const existing: PooEntry | undefined = entryId ? getState().poos[entryId] : undefined;
   const tz = ctx?.baby.timezone ?? 'UTC';
   const [time, setTime] = useState(toLocalInput(existing?.datetime ?? defaultTime(tz, onKey), tz));
@@ -48,9 +49,14 @@ export function LogPoo({ entryId, onKey, onDone }: { entryId?: string; onKey?: s
   const notice = wetOnly ? null : healthNotice(colour, ageDays);
   const noun = !nappy ? 'Poo' : 'Nappy';
 
-  const save = () => {
+  const save = async () => {
     setErr(null);
     if (new Date(iso).getTime() > Date.now() + 5 * 60000) return setErr('Time can’t be in the future.');
+    if (!existing) {
+      const s = getState(); const nt = nappy ? ntype : 'poo';
+      const like = similarEntry({ kind: 'poo', e: { poo_id: '', datetime: iso, nappy_type: nt } as PooEntry }, live(s.poos, baby.baby_id).map(e => ({ kind: 'poo' as const, e })), tz);
+      if (like && !(await confirm(similarQuestion(like, nt === 'wet' ? 'a wet nappy' : nt === 'both' ? 'a wet + poo nappy' : nappy ? 'a poo nappy' : 'a poo', formatTime((like.e as PooEntry).datetime, tz, s.prefs[currentUserId() ?? '']?.time_format), s.users, currentUserId())))) return;
+    }
     const id = upsertEntry('poos', { ...(existing ? { poo_id: existing.poo_id } : {}), baby_id: baby.baby_id, datetime: iso, nappy_type: nappy ? ntype : 'poo',
       colour: wetOnly ? null : colour, size: wetOnly ? null : size, texture: wetOnly ? null : texture, notes: notes.trim() || null });
     toast(existing ? `${noun} updated` : wetOnly ? 'Wet nappy saved' : `${noun} saved`, existing ? undefined : { label: 'Undo', run: () => deleteEntry('poos', id) });

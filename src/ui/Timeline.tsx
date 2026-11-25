@@ -1,3 +1,4 @@
+import { possibleDuplicates } from '../lib/duplicates';
 import React from 'react';
 import type { FeedingEntry, PooEntry, SleepEntry, ExtraEntry, TrackerDef } from '../lib/types';
 import { formatTime, formatDuration, TimeFormat, dateKey, formatDateKey } from '../lib/time';
@@ -64,6 +65,7 @@ export const KIND_ICON = (item: TItem, size = 18) =>
 
 export function Timeline({ items, tz, fmt, onOpen, now }: { items: TItem[]; tz: string; fmt: TimeFormat; onOpen: (i: TItem) => void; now: number }) {
   const users = useStore(s => s.users);
+  const dups = possibleDuplicates(items as any, tz);
   return (
     <ol className="timeline">
       {items.map(item => {
@@ -72,13 +74,14 @@ export function Timeline({ items, tz, fmt, onOpen, now }: { items: TItem[]; tz: 
         const by = (item.e.created_by && users[item.e.created_by]?.display_name) || 'Former caregiver';
         return (
           <li key={item.kind + itemId(item)}>
-            <button className={`tl-item tl-${item.kind} ${isMinor(item) ? 'tl-minor' : ''} ${item.kind === 'poo' && item.e.nappy_type === 'wet' ? 'tl-wet' : ''}`} onClick={() => onOpen(item)} aria-label={`${d.title} at ${d.time}${d.sub ? ', ' + d.sub : ''}. Tap to edit`}>
+            <button className={`tl-item tl-${item.kind} ${isMinor(item) ? 'tl-minor' : ''} ${item.kind === 'poo' && item.e.nappy_type === 'wet' ? 'tl-wet' : ''}`} onClick={() => onOpen(item)} aria-label={`${d.title} at ${d.time}${d.sub ? ', ' + d.sub : ''}${dups.has(itemId(item)) ? '. Possible duplicate' : ''}. Tap to edit`}>
               <span className="tl-dot">{KIND_ICON(item, 16)}</span>
               <span className="tl-time">{d.time}</span>
               <span className="tl-main">
                 <span className="tl-title">{d.title}</span>
                 {d.sub && <span className="tl-sub">{d.sub}</span>}
                 {notes && <span className="tl-note">“{notes}”</span>}
+                {dups.has(itemId(item)) && <span className="tl-dup">Possible duplicate · tap to check</span>}
               </span>
               {by && <span className="tl-by" title={`Logged by ${by}`}>{by[0].toUpperCase()}</span>}
             </button>
