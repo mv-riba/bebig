@@ -2,16 +2,17 @@ import React, { useMemo, useState } from 'react';
 import { MoreSheet, RunningExtraTimers } from './Extras';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
-import { useNow, Empty } from '../ui/ui';
+import { useNow, Empty, useConfirm, useToast } from '../ui/ui';
 import { IBottle, IPoo, IMoon, ISparkle, IChevron, IPlus, ICalendar, IBreast } from '../ui/icons';
 import { Timeline, buildTimeline, TItem, openItem, extrasForDay } from '../ui/Timeline';
 import { TrialNudge } from '../ui/plus';
 import { BabySwitcher, OtherBabiesTimers } from '../ui/babies';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
-import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween, tzGapNote } from '../lib/time';
-import { sleepElapsed, sleepTimerTooLong, feedTimerTotals, useStore, currentUserId } from '../lib/store';
+import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween, tzGapNote, tzCity, guessTimezone } from '../lib/time';
+import { sleepElapsed, sleepTimerTooLong, feedTimerTotals, useStore, currentUserId, roleFor, updateBaby } from '../lib/store';
 import { SyncBadge } from '../ui/SyncBadge';
+import type { BabyProfile } from '../lib/types';
 
 export function BabyAvatar({ src, name, size = 64 }: { src?: string | null; name: string; size?: number }) {
   return src ? <img className="avatar" src={src} alt={`${name}`} width={size} height={size} style={{ width: size, height: size }} />
@@ -46,7 +47,7 @@ export function Home() {
         <div className="home-greet">
           <h1>{greet}{me?.display_name ? `, ${me.display_name.split(' ')[0]}` : ''}!</h1>
           <p className="muted">{formatDateKey(today)} · <button className="baby-switch" onClick={() => setSwitching(true)} aria-haspopup="dialog">{baby.name}<IChevron size={14} className="chev-down" /></button> is {describeAge(daysBetween(baby.date_of_birth, today))}</p>
-          {tzNote && <p className="muted small tz-note">{tzNote}</p>}
+          {tzNote && <TravelPrompt baby={baby} note={tzNote} />}
         </div>
         <BabySwitcher open={switching} onClose={() => setSwitching(false)} />
         <SyncBadge />
@@ -101,6 +102,27 @@ export function Home() {
         {items.length > 0 && <p className="day-totals muted small">{stats.feedCount} feed{stats.feedCount === 1 ? '' : 's'} · {stats.pooCount} poo{stats.pooCount === 1 ? '' : 's'}{nappy ? ` · ${stats.wetCount} wet` : ''} · {formatDuration(stats.sleepSeconds)} sleep so far</p>}
       </section>
       <TrialNudge />
+    </div>
+  );
+}
+
+/** The phone's clock is in another time zone than the baby's. The owner is asked whether to switch the baby's
+ *  time zone (e.g. the family is travelling); "Not now" is remembered on this phone until the phone's zone changes
+ *  again. Caregivers only see the note: switching changes the times for everyone. */
+function TravelPrompt({ baby, note }: { baby: BabyProfile; note: string }) {
+  const confirm = useConfirm(); const toast = useToast();
+  const here = guessTimezone(); const key = `bebig:tz-dismissed:${baby.baby_id}`;
+  const [dismissed, setDismissed] = useState(() => { try { return localStorage.getItem(key) === here; } catch { return false; } });
+  if (roleFor(baby.baby_id) !== 'owner' || dismissed) return <p className="muted small tz-note">{note}</p>;
+  const notNow = () => { try { localStorage.setItem(key, here); } catch { /* private mode: ask again next time */ } setDismissed(true); };
+  const sw = async () => {
+    if (!(await confirm({ title: `Switch to ${tzCity(here)} time?`, text: `${baby.name}’s times will be shown in ${tzCity(here)} time for everyone who follows ${baby.name}. Past days are regrouped by ${tzCity(here)} days, so some daily totals change. Recorded moments stay the same, and you can switch back any time.`, ok: 'Switch' }))) return;
+    updateBaby(baby.baby_id, { timezone: here }); toast(`Now showing ${tzCity(here)} time`);
+  };
+  return (
+    <div className="tz-ask">
+      <p className="muted small">You seem to be in {tzCity(here)} time. {note}</p>
+      <div className="btn-row"><button className="btn small soft" onClick={sw}>Use {tzCity(here)} time</button><button className="link small" onClick={notNow}>Not now</button></div>
     </div>
   );
 }

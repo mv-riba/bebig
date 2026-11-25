@@ -3,7 +3,8 @@ import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, R
 import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash, ICrown } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
-import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds, extraTimersOf, timerStartedBy } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds, extraTimersOf, timerStartedBy, live, currentUserId } from '../lib/store';
+import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { IPlay, IPause, IStop } from '../ui/icons';
 import { MAX_EXTRA_AMOUNT } from '../lib/validate';
 import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus, dailyEntryOn } from '../lib/extras';
@@ -131,7 +132,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
   if (!ctx || !t) return null;
   // a running timer can always be stopped and saved, even if Plus ended while it ran
   if (!ex && !timer && !canX) return <Page title={t.name} onCancel={onDone}><PlusLock title="Extra trackers are part of Bebig Plus" text={EXTRAS_LOCK_TEXT} /></Page>;
-  const save = () => {
+  const save = async () => {
     setErr(null);
     let iso: string;
     try { iso = fromLocalInput(time, tz); } catch (x: any) { return setErr(x.message); }
@@ -144,6 +145,11 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
     // "Once a day" trackers: only one entry per day, so every caregiver sees the same check-off
     const given = dailyEntryOn(t, ctx.extras.filter(e => e.extra_id !== ex?.extra_id), tz, dateKey(iso, tz));
     if (given) return setErr(`${t.name} was already given that day at ${formatTime(given.datetime, tz, ctx.prefs.time_format)}. Edit that entry instead.`);
+    if (!ex) {
+      const s = getState();
+      const like = similarEntry({ kind: 'extra', e: { extra_id: '', tracker_id: t.tracker_id, datetime: iso } as ExtraEntry, t }, ctx.extras.filter(e => e.tracker_id === t.tracker_id).map(e => ({ kind: 'extra' as const, e, t })), tz);
+      if (like && !(await confirm(similarQuestion(like, t.name.toLowerCase(), formatTime((like.e as ExtraEntry).datetime, tz, ctx.prefs.time_format), s.users, currentUserId())))) return;
+    }
     const id = upsertEntry('extras', { ...(ex ?? {}), baby_id: ctx.baby.baby_id, tracker_id: t.tracker_id, datetime: iso,
       value_num: t.kind === 'amount' ? num : null, duration_seconds: t.kind === 'duration' ? (mins ?? 0) * 60 : null, level: t.kind === 'level' ? level : null, notes: notes.trim() || null });
     toast(ex ? `${t.name} updated` : `${t.name} logged`, ex ? undefined : { label: 'Undo', run: () => deleteEntry('extras', id) });

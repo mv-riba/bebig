@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId } from '../lib/store';
+import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, dayStart, zonedParts } from '../lib/time';
 import type { FeedingEntry, FeedingType } from '../lib/types';
 import { MAX_FEED_SECONDS } from '../lib/validate';
@@ -48,7 +49,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
   const timer = !existing && type === 'breast' ? feedTimer : null;
   const totals = timer ? feedTimerTotals(timer, now) : null;
 
-  const save = (fromTimer = false) => {
+  const save = async (fromTimer = false) => {
     setErr(null);
     try {
       let row: Partial<FeedingEntry> = { baby_id: baby.baby_id, feeding_type: type, observations: obs, notes: notes.trim() || null };
@@ -80,6 +81,11 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
           row.quantity_ml = qty; row.duration_seconds = null; row.breast_side = null; row.left_duration_seconds = null; row.right_duration_seconds = null;
           if (end) { const e = fromLocalInput(end, tz); if (new Date(e) <= new Date(s)) throw new Error('End time must be after the start time.'); row.end_datetime = e; } else row.end_datetime = null;
         }
+      }
+      // another caregiver (or you) may have logged this feed already, e.g. both phones at once or one offline
+      if (!fromTimer && !existing) {
+        const s = getState(); const like = similarEntry({ kind: 'feed', e: row as FeedingEntry }, live(s.feeds, baby.baby_id).map(e => ({ kind: 'feed' as const, e })), tz);
+        if (like && !(await confirm(similarQuestion(like, `a ${row.feeding_type === 'breast' ? 'breastfeed' : row.feeding_type === 'formula' ? 'formula feed' : 'feed of expressed milk'}`, formatTime((like.e as FeedingEntry).start_datetime, tz, s.prefs[currentUserId() ?? '']?.time_format), s.users, currentUserId())))) return;
       }
       // from the timer: saved together with the Stop, so two caregivers stopping it can't save the feed twice
       const id = fromTimer ? stopFeedTimer(baby.baby_id, row) : upsertEntry('feeds', row);
