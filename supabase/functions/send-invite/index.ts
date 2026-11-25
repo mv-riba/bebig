@@ -58,7 +58,7 @@ Deno.serve(async req => {
 
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST', signal: AbortSignal.timeout(8000),
-    headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json', 'Idempotency-Key': `invite-${access_id}` },
+    headers: { Authorization: `Bearer ${Deno.env.get('RESEND_API_KEY')}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       from: 'Bebig <no-reply@bebig.app>', to: [to], reply_to: user.email ? [user.email] : undefined,
       subject: `${inviter} invited you to Bebig`,
