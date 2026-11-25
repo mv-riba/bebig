@@ -7,6 +7,7 @@ import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeS
 import { toLocalInput, fromLocalInput, formatClock, formatTime, formatDuration, dateKey } from '../lib/time';
 import type { SleepEntry } from '../lib/types';
 import { defaultTime } from './LogFeed';
+import { StillCheck } from '../ui/still';
 
 function Ring({ fraction, children }: { fraction: number; children: React.ReactNode }) {
   const r = 96, c = 2 * Math.PI * r;
@@ -74,8 +75,11 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
         <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this sleep timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) { discardSleep(a); onDone(); } }}>Discard timer</button>
       </div>
     );
+    const lastPause = (a.pauses || []).reduce((m, p) => Math.max(m, Date.parse(p.start)), Date.parse(a.start_datetime) + 1000);
     return (
       <div className="sleep-start">
+        <StillCheck kind="sleep" id={a.sleep_id} startedAt={a.start_datetime} earliestEnd={a.status === 'paused' ? lastPause : Date.parse(a.start_datetime) + 60000} tz={tz} fmt={prefs.time_format} now={now}
+          onEnded={iso => { const d = stopSleep(a, iso); toast(`Sleep saved · ${formatDuration(d.duration_seconds || 0)}`); onDone(); }} />
         <Ring fraction={(el % 3600) / 3600 || 0.002}>
           <IBed size={34} />
           <div className="timer-big">{formatClock(el)}</div>

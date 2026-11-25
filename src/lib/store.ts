@@ -494,6 +494,10 @@ function closeSegment(t: RunningTimer, at = Date.now()) {
   if (t.side === 'left') t.left_seconds += secs; else if (t.side === 'right') t.right_seconds += secs; else t.unsided_seconds += secs;
   t.segment_started_at = null;
 }
+/** The earliest moment a running timer can have ended without dropping time it already counted. */
+export function earliestTimerEnd(t: RunningTimer): number {
+  return t.segment_started_at ? Date.parse(t.segment_started_at) : Date.parse(t.started_at) + (t.left_seconds + t.right_seconds + t.unsided_seconds) * 1000;
+}
 export function feedTimerTotals(ft: RunningTimer, now = Date.now()) {
   let { left_seconds: l, right_seconds: r, unsided_seconds: u } = ft;
   if (ft.segment_started_at) {
@@ -533,12 +537,12 @@ function adoptDeviceTimers(s: any) {
 
 /** Applies a tap to this device's copy of the timer and queues it for the server. Does nothing if the timer
  *  has already finished here (the screen may be a moment behind another caregiver). */
-function timerTap(timer_id: string | undefined, kind: TimerActionKind, change: (t: RunningTimer, at: string) => boolean | void, extra: Partial<SleepAction> = {}) {
+function timerTap(timer_id: string | undefined, kind: TimerActionKind, change: (t: RunningTimer, at: string) => boolean | void, extra: Partial<SleepAction> = {}, atIso?: string) {
   const cur = timer_id ? state.timers[timer_id] : null;
   if (!cur || cur.ended_at) return false;
   let done = false;
   setState(s => {
-    const t = s.timers[cur.timer_id]; const at = nowIso();
+    const t = s.timers[cur.timer_id]; const at = atIso ?? nowIso();
     if (change(t, at) === false) return;
     t.updated_by = currentUserId(); t.updated_at = at;
     queue(s, 'timers', t, { kind, at, ...extra });
@@ -559,9 +563,10 @@ const resumeTimer = (id?: string) => timerTap(id, 'resume', (t, at) => { if (t.s
 const discardTimer = (id?: string) => timerTap(id, 'discard', (t, at) => { closeSegment(t, Date.parse(at)); t.ended_at = at; t.end_kind = 'discarded'; });
 /** Stops a timer and saves its entry. Queued as one Stop (with the entry's id) followed by the entry itself, so if
  *  another caregiver's Stop reached the server first, this entry is dropped instead of saving the same feed twice. */
-function stopTimer(id: string, table: 'feeds' | 'extras', entry: any): string | null {
+/** `endAt`: when it really ended ("Finished earlier"); default now. */
+function stopTimer(id: string, table: 'feeds' | 'extras', entry: any, endAt?: string): string | null {
   const entry_id = uuid();
-  const ok = timerTap(id, 'stop', (t, at) => { closeSegment(t, Date.parse(at)); t.ended_at = at; t.end_kind = 'saved'; t.entry_id = entry_id; }, { entry_id });
+  const ok = timerTap(id, 'stop', (t, at) => { closeSegment(t, Date.parse(at)); t.ended_at = at; t.end_kind = 'saved'; t.entry_id = entry_id; }, { entry_id }, endAt);
   if (!ok) return null;
   return upsertEntry(table, { ...entry, [idField[table]]: entry_id });
 }
@@ -577,8 +582,8 @@ export function switchFeedSide(baby_id: string, side: 'left' | 'right' | null) {
 }
 export function discardFeedTimer(baby_id: string) { discardTimer(feedTimerOf(baby_id)?.timer_id); }
 /** Stops the breastfeeding timer and saves the feed. Null if the timer had already finished on this device. */
-export function stopFeedTimer(baby_id: string, feed: Partial<FeedingEntry>) {
-  const t = feedTimerOf(baby_id); return t ? stopTimer(t.timer_id, 'feeds', feed) : null;
+export function stopFeedTimer(baby_id: string, feed: Partial<FeedingEntry>, endAt?: string) {
+  const t = feedTimerOf(baby_id); return t ? stopTimer(t.timer_id, 'feeds', feed, endAt) : null;
 }
 
 // ---------------- Sleep timer (persisted as an active SleepEntry) ----------------
@@ -621,10 +626,13 @@ function endedAt(e: SleepEntry, at: string): SleepEntry {
 /** A sleep timer can't run past 24 hours: after that it can only be discarded and entered by hand. */
 export const SLEEP_TIMER_MAX_MS = 24 * 3600000;
 export const sleepTimerTooLong = (e: SleepEntry, now = Date.now()) => !e.end_datetime && now - new Date(e.start_datetime).getTime() > SLEEP_TIMER_MAX_MS;
-export function stopSleep(e: SleepEntry) {
+/** `endAt`: when baby really woke ("Woke up earlier"); default now. */
+export function stopSleep(e: SleepEntry, endAt?: string) {
   e = current(e); if (e.status === 'completed' || e.deleted_at) return e;
-  if (sleepTimerTooLong(e)) throw new Error('This sleep timer has run for more than 24 hours. Enter the real times instead.');
-  const t = nowIso();
+  const t = endAt ?? nowIso();
+  if (Date.parse(t) - Date.parse(e.start_datetime) > SLEEP_TIMER_MAX_MS) throw new Error('This sleep timer has run for more than 24 hours. Enter the real times instead.');
+  if (endAt && Date.parse(endAt) <= Date.parse(e.start_datetime)) throw new Error('Wake-up time must be after the sleep started.');
+  if (endAt && Date.parse(endAt) > Date.now() + 60000) throw new Error('Wake-up time can’t be in the future.');
   const done = endedAt(e, t);
   upsertEntry('sleeps', done, { kind: 'stop', at: t });
   return done;
