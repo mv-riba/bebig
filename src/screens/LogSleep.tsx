@@ -3,7 +3,7 @@ import { syncNow } from '../lib/sync';
 import { Page, Segmented, Field, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IMoon } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, discardSleep, sleepElapsed, getState, live } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, discardSleep, sleepElapsed, sleepTimerTooLong, getState, live } from '../lib/store';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, formatDuration, dateKey } from '../lib/time';
 import type { SleepEntry } from '../lib/types';
 import { defaultTime } from './LogFeed';
@@ -31,6 +31,8 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
   const [end, setEnd] = useState(toLocalInput(existing?.end_datetime ?? defaultTime(tz, onKey), tz));
   const [notes, setNotes] = useState(existing?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
+  // a sleep timer left running over 24 hours: entered by hand instead, and the timer is discarded once that's saved
+  const [replacing, setReplacing] = useState<SleepEntry | null>(null);
   // fetch the latest before anyone taps Start: another caregiver may have started a timer a moment ago
   useEffect(() => { syncNow().catch(() => { /* offline: the timer still works and syncs later */ }); }, []);
   if (!ctx) return null;
@@ -44,13 +46,14 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
     if (new Date(e) <= new Date(s)) return setErr('End time must be after the start time.');
     if (new Date(e).getTime() > Date.now() + 5 * 60000) return setErr('End time can’t be in the future. Use the timer for an ongoing sleep.');
     if (new Date(e).getTime() - new Date(s).getTime() > 16 * 3600000) return setErr('That’s longer than 16 hours — please check the times.');
-    const overlap = live(getState().sleeps, baby.baby_id).find(x => x.sleep_id !== existing?.sleep_id && x.end_datetime && new Date(x.start_datetime) < new Date(e) && new Date(x.end_datetime) > new Date(s));
+    const overlap = live(getState().sleeps, baby.baby_id).find(x => x.sleep_id !== existing?.sleep_id && x.sleep_id !== replacing?.sleep_id && x.end_datetime && new Date(x.start_datetime) < new Date(e) && new Date(x.end_datetime) > new Date(s));
     if (overlap && !(await confirm({ title: 'Overlapping sleep', text: `This overlaps another sleep (${formatTime(overlap.start_datetime, tz, prefs.time_format)}–${formatTime(overlap.end_datetime!, tz, prefs.time_format)}). Save anyway?`, ok: 'Save anyway' }))) return;
     const pauses = existing?.status === 'completed' ? (existing.pauses || []).filter(p => p.end && new Date(p.start) >= new Date(s) && new Date(p.end) <= new Date(e)) : [];
-    const row: Partial<SleepEntry> = { ...(existing ? { sleep_id: existing.sleep_id } : {}), baby_id: baby.baby_id, start_datetime: s, end_datetime: e, status: 'completed', pauses, notes: notes.trim() || null };
+    const row: Partial<SleepEntry> = { ...(existing && !replacing ? { sleep_id: existing.sleep_id } : {}), baby_id: baby.baby_id, start_datetime: s, end_datetime: e, status: 'completed', pauses, notes: notes.trim() || null };
     row.duration_seconds = Math.round(sleepElapsed(row as SleepEntry));
     const id = upsertEntry('sleeps', row);
-    toast(existing ? 'Sleep updated' : 'Sleep saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('sleeps', id) });
+    if (replacing) discardSleep(replacing);
+    toast(existing && !replacing ? 'Sleep updated' : 'Sleep saved', existing || replacing ? undefined : { label: 'Undo', run: () => deleteEntry('sleeps', id) });
     onDone();
   };
 
@@ -63,6 +66,14 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
       </div>
     );
     const el = sleepElapsed(a, now);
+    if (sleepTimerTooLong(a, now)) return (
+      <div className="sleep-start">
+        <Ring fraction={1}><IBed size={34} /><div className="timer-big">24 h+</div><div className="muted small">Since {formatTime(a.start_datetime, tz, prefs.time_format)}</div></Ring>
+        <p className="center">This sleep timer has been running for more than 24 hours, so it was probably left on. Enter when the sleep really ended, or discard it.</p>
+        <button className="btn primary block" onClick={() => { setReplacing(a); setStart(toLocalInput(a.start_datetime, tz)); setEnd(toLocalInput(new Date(Math.min(Date.now(), new Date(a.start_datetime).getTime() + 3 * 3600000)).toISOString(), tz)); setMode('manual'); }}><ICalendar size={16} /> Enter the real times</button>
+        <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this sleep timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) { discardSleep(a); onDone(); } }}>Discard timer</button>
+      </div>
+    );
     return (
       <div className="sleep-start">
         <Ring fraction={(el % 3600) / 3600 || 0.002}>
@@ -86,14 +97,15 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
     <Page title={existing ? 'Edit Sleep' : 'Add Sleep'} onCancel={onDone} className="form-page"
       right={existing && !editingActive ? <button className="icon-btn danger" aria-label="Delete sleep" onClick={() => { deleteEntry('sleeps', existing.sleep_id); toast('Sleep deleted', { label: 'Undo', run: () => restoreEntry('sleeps', existing.sleep_id) }); onDone(); }}><ITrash /></button> : null}>
       {!existing && <Segmented size="lg" label="Logging method" value={mode} onChange={setMode} options={[{ value: 'timer', label: 'Timer', icon: <ITimer size={26} /> }, { value: 'manual', label: 'Manual', icon: <ICalendar size={26} /> }]} />}
-      {(mode === 'timer' && !existing) || editingActive ? timerView() : (
+      {((mode === 'timer' && !existing) || editingActive) && !replacing ? timerView() : (
         <>
           <Field label="Fell asleep"><input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
           <Field label="Woke up"><input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
           {(() => { try { const s = new Date(fromLocalInput(start, tz)), e = new Date(fromLocalInput(end, tz)); return e > s ? <p className="muted">Duration: <strong>{formatDuration((e.getTime() - s.getTime()) / 1000)}</strong>{dateKey(s, tz) !== dateKey(e, tz) ? ' · crosses midnight' : ''}</p> : null; } catch { return null; } })()}
           <Field label="Notes" hint="(optional)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
           {err && <div className="alert error" role="alert">{err}</div>}
-          <button className="btn primary block" onClick={saveManual}>{existing ? 'Save changes' : 'Save Sleep'}</button>
+          <button className="btn primary block" onClick={saveManual}>{existing && !replacing ? 'Save changes' : 'Save Sleep'}</button>
+          {replacing && <button className="link small" onClick={() => setReplacing(null)}>Back to the timer</button>}
         </>
       )}
       <div className="moon-deco" aria-hidden="true"><IMoon size={56} /></div>

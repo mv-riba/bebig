@@ -178,3 +178,33 @@ test('deleting a tracker while its timer runs discards the timer instead of leav
   assert.deepEqual(timerOps(id), ['start', 'discard']);
   store.restoreEntry('trackers', 'tummyA');
 });
+
+test('a sleep timer left running over 24 hours can’t be stopped as is, only discarded (then entered by hand)', () => {
+  clear();
+  const id = store.startSleep(A);
+  store.setState(s => { s.sleeps[id].start_datetime = iso(25 * 60); });
+  assert.ok(store.sleepTimerTooLong(store.activeSleep(A)!));
+  assert.throws(() => store.stopSleep(store.activeSleep(A)!), /more than 24 hours/);
+  assert.equal(store.activeSleep(A)!.status, 'active', 'still running so it can be discarded');
+  store.discardSleep(store.activeSleep(A)!);
+  assert.equal(store.activeSleep(A), null);
+  assert.deepEqual(sleepOps(id), ['start', 'discard']);
+});
+
+test('a sleep timer at 23 hours still stops normally', () => {
+  clear();
+  const id = store.startSleep(A);
+  store.setState(s => { s.sleeps[id].start_datetime = iso(23 * 60); });
+  assert.equal(store.sleepTimerTooLong(store.activeSleep(A)!), false);
+  assert.ok(Math.abs(store.stopSleep(store.activeSleep(A)!).duration_seconds! - 23 * 3600) < 5);
+});
+
+test('time zone note: shown only when the phone’s clock differs from the baby’s', async () => {
+  const { tzGapNote } = await import('../src/lib/time.ts');
+  const winter = new Date('2026-11-25T10:00:00Z');
+  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/Helsinki'), null);
+  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/Riga'), null, 'same clock time, different name');
+  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Europe/London'), 'Times are in Helsinki time, 2 h ahead of this phone.');
+  assert.equal(tzGapNote('Europe/Helsinki', winter, 'Asia/Kolkata'), 'Times are in Helsinki time, 3 h 30 min behind this phone.');
+  assert.equal(tzGapNote('America/New_York', winter, 'Europe/Helsinki'), 'Times are in New York time, 7 h behind this phone.');
+});

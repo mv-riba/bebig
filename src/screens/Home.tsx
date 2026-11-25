@@ -9,8 +9,8 @@ import { TrialNudge } from '../ui/plus';
 import { BabySwitcher, OtherBabiesTimers } from '../ui/babies';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
-import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween } from '../lib/time';
-import { sleepElapsed, feedTimerTotals, useStore, currentUserId } from '../lib/store';
+import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween, tzGapNote } from '../lib/time';
+import { sleepElapsed, sleepTimerTooLong, feedTimerTotals, useStore, currentUserId } from '../lib/store';
 import { SyncBadge } from '../ui/SyncBadge';
 
 export function BabyAvatar({ src, name, size = 64 }: { src?: string | null; name: string; size?: number }) {
@@ -36,6 +36,7 @@ export function Home() {
   const nappy = !!baby.wet_tracking;
   const hasExtras = nappy || ctx.trackers.length > 0;
   const topInsight = insight?.observations[0];
+  const tzNote = tzGapNote(tz, new Date(now));
 
   return (
     <div className="screen home">
@@ -45,6 +46,7 @@ export function Home() {
         <div className="home-greet">
           <h1>{greet}{me?.display_name ? `, ${me.display_name.split(' ')[0]}` : ''}!</h1>
           <p className="muted">{formatDateKey(today)} · <button className="baby-switch" onClick={() => setSwitching(true)} aria-haspopup="dialog">{baby.name}<IChevron size={14} className="chev-down" /></button> is {describeAge(daysBetween(baby.date_of_birth, today))}</p>
+          {tzNote && <p className="muted small tz-note">{tzNote}</p>}
         </div>
         <BabySwitcher open={switching} onClose={() => setSwitching(false)} />
         <SyncBadge />
@@ -66,7 +68,7 @@ export function Home() {
         <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended at ${formatTime(ls.end_datetime!, tz, fmt)}, awake ${formatAgo(ls.end_datetime!, now).replace(' ago', '')}. Log sleep` : 'No sleep yet. Log sleep'}>
           <span className="sum-ic"><IMoon size={30} /></span>
           <span className="sum-label">{active ? <><span className="pulse" aria-hidden="true" /> Sleeping</> : 'Sleep'}</span>
-          {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">since {formatTime(active.start_datetime, tz, fmt)}</span></>
+          {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">{sleepTimerTooLong(active, now) ? 'Over 24 h · tap to fix' : `since ${formatTime(active.start_datetime, tz, fmt)}`}</span></>
             : ls ? <><span className="sum-time">{formatTime(ls.end_datetime!, tz, fmt)}</span><span className="sum-ago">awake {formatAgo(ls.end_datetime!, now).replace(' ago', '')}</span></> : <span className="sum-ago">None yet</span>}
         </button>
       </section>
