@@ -149,3 +149,16 @@ export function guessTimezone() { try { return Intl.DateTimeFormat().resolvedOpt
 export function listTimezones(): string[] {
   try { return (Intl as any).supportedValuesOf('timeZone'); } catch { return ['UTC', 'Europe/Amsterdam', 'Europe/Helsinki', 'Europe/London']; }
 }
+
+/** When this phone's clock is in another time zone than the baby's: a short note, since every time in the app
+ *  is shown in the baby's zone (so caregivers abroad and travellers see the same times as everyone else). */
+export function tzGapNote(babyTz: string, now = new Date(), deviceTz = guessTimezone()): string | null {
+  if (!babyTz || babyTz === deviceTz) return null;
+  let diffMin: number;
+  try { diffMin = Math.round((tzOffset(now, babyTz) - tzOffset(now, deviceTz)) / 60000); } catch { return null; }
+  if (!diffMin) return null;
+  const a = Math.abs(diffMin), h = Math.floor(a / 60), m = a % 60;
+  const gap = h && m ? `${h} h ${m} min` : h ? `${h} h` : `${m} min`;
+  const city = (babyTz.split('/').pop() || babyTz).replace(/_/g, ' ');
+  return `Times are in ${city} time, ${gap} ${diffMin > 0 ? 'ahead of' : 'behind'} this phone.`;
+}

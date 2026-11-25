@@ -618,8 +618,12 @@ function endedAt(e: SleepEntry, at: string): SleepEntry {
   done.duration_seconds = Math.round(sleepElapsed(done));
   return done;
 }
+/** A sleep timer can't run past 24 hours: after that it can only be discarded and entered by hand. */
+export const SLEEP_TIMER_MAX_MS = 24 * 3600000;
+export const sleepTimerTooLong = (e: SleepEntry, now = Date.now()) => !e.end_datetime && now - new Date(e.start_datetime).getTime() > SLEEP_TIMER_MAX_MS;
 export function stopSleep(e: SleepEntry) {
   e = current(e); if (e.status === 'completed' || e.deleted_at) return e;
+  if (sleepTimerTooLong(e)) throw new Error('This sleep timer has run for more than 24 hours. Enter the real times instead.');
   const t = nowIso();
   const done = endedAt(e, t);
   upsertEntry('sleeps', done, { kind: 'stop', at: t });
