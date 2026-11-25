@@ -123,7 +123,11 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
           ) : (
             <>
               <StillCheck kind="feed" id={timer.timer_id} startedAt={timer.started_at} earliestEnd={earliestTimerEnd(timer)} tz={tz} fmt={ctx.prefs.time_format} now={now}
-                onEnded={iso => { save(true, iso); }} />
+                onEnded={iso => {
+                  // checked here so the message shows in the card, next to the time that needs changing
+                  if (feedTimerTotals(timer, Date.parse(iso)).total > MAX_FEED_SECONDS) throw new Error('A feed can be at most 4 hours. Choose an earlier end, or discard the timer and enter the feed by hand.');
+                  save(true, iso);
+                }} />
               <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
               <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
               {timerStartedBy(timer) && <div className="muted small">Started by {timerStartedBy(timer)} · {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>}

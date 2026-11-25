@@ -2,7 +2,7 @@
 // never feeding or medical advice. Fire while the app/PWA is running. Background push requires the native app.
 import { useEffect } from 'react';
 import { getState, accessibleBabies, myPrefs, live, activeSleep, feedTimerOf } from './store';
-import { stillDue } from './still';
+import { stillDue, confirmedAt } from './still';
 
 const fired = new Set<string>();
 function notify(key: string, title: string, body: string) {
@@ -27,11 +27,11 @@ export function useReminders() {
       }
       if (p.notifications.feeding) {
         const ft = feedTimerOf(b.baby_id, s);
-        if (ft && stillDue('feed', ft.timer_id, ft.started_at)) notify('still-feed:' + ft.timer_id, 'Still feeding?', `${b.name}’s breastfeeding timer has been running for over 1½ hours. If it was left on, open Bebig to set when the feed finished.`);
+        if (ft && stillDue('feed', ft.timer_id, ft.started_at)) notify(`still-feed:${ft.timer_id}:${confirmedAt(ft.timer_id)}`, 'Still feeding?', `${b.name}’s breastfeeding timer has been running for over 1½ hours. If it was left on, open Bebig to set when the feed finished.`);
       }
       if (p.notifications.sleep) {
         const a = activeSleep(b.baby_id, s);
-        if (a && stillDue('sleep', a.sleep_id, a.start_datetime)) notify('still-sleep:' + a.sleep_id, 'Still sleeping?', `${b.name}’s sleep timer has been running for over 12 hours. If it was left on, open Bebig to set when ${b.name} woke up.`);
+        if (a && stillDue('sleep', a.sleep_id, a.start_datetime)) notify(`still-sleep:${a.sleep_id}:${confirmedAt(a.sleep_id)}`, 'Still sleeping?', `${b.name}’s sleep timer has been running for over 12 hours. If it was left on, open Bebig to set when ${b.name} woke up.`);
       }
       }
     };

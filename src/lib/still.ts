@@ -7,8 +7,19 @@ export const STILL_SLEEPING_AFTER_MS = 12 * 3600000;
 const ASK_AGAIN_MS = { feed: 30 * 60000, sleep: 2 * 3600000 };
 
 const key = (id: string) => `bebig:still:${id}`;
-function confirmedAt(id: string): number { try { return Number(localStorage.getItem(key(id))) || 0; } catch { return 0; } }
-export function confirmStill(id: string, now = Date.now()) { try { localStorage.setItem(key(id), String(now)); } catch { /* private mode: asked again */ } }
+/** When "Yes, still …" was last tapped for this timer on this phone (0 = never). Also tells notifications apart:
+ *  after a "Yes", the next question is a new notification. */
+export function confirmedAt(id: string): number { try { return Number(localStorage.getItem(key(id))) || 0; } catch { return 0; } }
+export function confirmStill(id: string, now = Date.now()) {
+  try {
+    localStorage.setItem(key(id), String(now));
+    // forget answers about timers that finished long ago (a timer runs at most a day)
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('bebig:still:') && k !== key(id) && now - (Number(localStorage.getItem(k)) || 0) > 2 * 86400000) localStorage.removeItem(k);
+    }
+  } catch { /* private mode: asked again */ }
+}
 
 /** Should we ask "Still feeding?" / "Still sleeping?" about this running timer now? */
 export function stillDue(kind: 'feed' | 'sleep', id: string, startedIso: string, now = Date.now()): boolean {

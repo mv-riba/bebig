@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const mem = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) }; };
+const mem = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), key: (i: number) => [...m.keys()][i] ?? null, get length() { return m.size; } }; };
 Object.assign(globalThis as any, { localStorage: mem(), sessionStorage: mem(), BroadcastChannel: undefined });
 const store = await import('../src/lib/store.ts');
 const { stillDue, confirmStill } = await import('../src/lib/still.ts');
@@ -82,4 +82,14 @@ test('a wake-up time before the sleep started, or in the future, is refused', ()
   assert.throws(() => store.stopSleep(store.activeSleep(A)!, ago(14 * 60)), /after the sleep started/);
   assert.throws(() => store.stopSleep(store.activeSleep(A)!, new Date(Date.now() + 3600000).toISOString()), /future/);
   assert.equal(store.activeSleep(A)!.status, 'active');
+});
+
+test('old "Yes" answers are cleaned up; the current timer’s answer is kept', () => {
+  const now = Date.now();
+  for (let i = 0; i < 30; i++) localStorage.setItem('bebig:still:old' + i, String(now - 3 * 86400000));
+  localStorage.setItem('bebig:still:recent', String(now - 3600000));
+  confirmStill('current', now);
+  const keys: string[] = [];
+  for (const k of ['current', 'recent', 'old0', 'old29']) if (localStorage.getItem('bebig:still:' + k)) keys.push(k);
+  assert.deepEqual(keys, ['current', 'recent']);
 });
