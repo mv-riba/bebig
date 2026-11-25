@@ -95,7 +95,7 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
   };
   return (
     <Page title={ex ? 'Edit tracker' : 'New tracker'} onCancel={onDone} className="form-page"
-      right={ex && !ex.preset ? <button className="icon-btn danger" aria-label="Delete tracker" onClick={async () => { if (await confirm({ title: `Delete “${ex.name}”?`, text: 'Its past entries will be hidden too.', ok: 'Delete', danger: true })) { deleteEntry('trackers', ex.tracker_id); toast('Tracker deleted', { label: 'Undo', run: () => restoreEntry('trackers', ex.tracker_id) }); onDone(); } }}><ITrash /></button> : null}>
+      right={ex && !ex.preset ? <button className="icon-btn danger" aria-label="Delete tracker" onClick={async () => { if (await confirm({ title: `Delete “${ex.name}”?`, text: extraTimersOf()[ex.tracker_id] ? 'Its past entries will be hidden too, and its running timer will be discarded.' : 'Its past entries will be hidden too.', ok: 'Delete', danger: true })) { deleteEntry('trackers', ex.tracker_id); toast('Tracker deleted', { label: 'Undo', run: () => restoreEntry('trackers', ex.tracker_id) }); onDone(); } }}><ITrash /></button> : null}>
       <Field label="Name"><input value={name} maxLength={40} placeholder="e.g. Vitamin D" onChange={e => setName(e.target.value)} disabled={!!ex?.preset} /></Field>
       <Field label="Icon">
         <div className="icon-pick" role="radiogroup" aria-label="Icon">{ICONS.map(i => (

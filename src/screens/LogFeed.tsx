@@ -22,9 +22,12 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
   const pref = ctx?.baby.feeding_preference ?? 'combination';
   const allowed: FeedingType[] = pref === 'breast' ? ['breast'] : pref === 'formula' ? ['formula'] : ['breast', 'expressed', 'formula'];
   if (existing && !allowed.includes(existing.feeding_type)) allowed.push(existing.feeding_type); // preserve historical types
+  // a breastfeeding timer still running (e.g. the preference was changed to formula meanwhile) must stay reachable
+  const runningFeed = !existing && !!ctx?.feedTimer;
+  if (runningFeed && !allowed.includes('breast')) allowed.unshift('breast');
   const tz = ctx?.baby.timezone ?? 'UTC';
 
-  const [type, setType] = useState<FeedingType>(existing?.feeding_type ?? allowed[0]);
+  const [type, setType] = useState<FeedingType>(existing?.feeding_type ?? (runningFeed ? 'breast' : allowed[0]));
   const [start, setStart] = useState(toLocalInput(existing?.start_datetime ?? defaultTime(tz, onKey), tz));
   const [end, setEnd] = useState(existing?.end_datetime && existing.feeding_type !== 'breast' ? toLocalInput(existing.end_datetime, tz) : '');
   const [durMin, setDurMin] = useState<number | null>(existing?.duration_seconds != null ? Math.round(existing.duration_seconds / 60) : null);
