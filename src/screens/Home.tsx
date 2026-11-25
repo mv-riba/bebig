@@ -47,7 +47,7 @@ export function Home() {
         <button className="avatar-btn" onClick={() => setSwitching(true)} aria-label={`${baby.name} — switch or add a baby`}><BabyAvatar src={baby.photograph_url} name={baby.name} size={64} /></button>
         <div className="home-greet">
           <h1>{greet}{me?.display_name ? `, ${me.display_name.split(' ')[0]}` : ''}!</h1>
-          <p className="muted">{formatDateKey(today)} · <button className="baby-switch" onClick={() => setSwitching(true)} aria-haspopup="dialog">{baby.name}<IChevron size={14} className="chev-down" /></button> is {describeAge(daysBetween(baby.date_of_birth, today))}</p>
+          <p className="muted">{formatDateKey(today)} · <button className="baby-switch" onClick={() => setSwitching(true)} aria-haspopup="dialog"><span className="name-clamp">{baby.name}</span><IChevron size={14} className="chev-down" /></button> is {describeAge(daysBetween(baby.date_of_birth, today))}</p>
           {tzNote && <TravelPrompt baby={baby} note={tzNote} />}
         </div>
         <BabySwitcher open={switching} onClose={() => setSwitching(false)} />
