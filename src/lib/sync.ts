@@ -26,3 +26,9 @@ export async function syncDiagnostics(): Promise<string> {
   if (syncMode() !== 'remote') return 'Local mode — no cloud sync configured in this build.';
   const m = await import('./supabase'); return m.diagnostics();
 }
+
+/** Remote mode: email a saved caregiver invitation. Returns 'sent', 'already_sent', 'daily_limit', 'offline', 'failed'… */
+export async function emailInvite(access_id: string): Promise<string> {
+  if (syncMode() !== 'remote') return 'local';
+  const m = await import('./supabase'); return m.sendInviteEmail(access_id);
+}

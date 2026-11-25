@@ -44,6 +44,7 @@ function confirmAccountFromLink(user: { id: string; email: string }): boolean {
   const current = auth ? `\n\nYou'll be signed out of ${auth.user.email} on this device.` : '';
   return confirm(`Continue in Bebig as ${user.email}?${current}\n\nOnly continue if this is your email address.`);
 }
+let recovery: { email: string; s: AuthSession } | null = null; // see resetWithCode
 function toSession(j: any): AuthSession { return { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: Date.now() + (j.expires_in ?? 3600) * 1000, user: j.user }; }
 
 // Refresh tokens are single-use (Supabase rotates them). Refreshing must therefore happen exactly once:
@@ -315,7 +316,25 @@ export function startRemoteSync() {
       const j = await gotrue('token?grant_type=password', { email, password, ...captcha(captchaToken) }); saveAuth(toSession(j));
       return { user_id: j.user.id, email: j.user.email, display_name: j.user.user_metadata?.display_name || email.split('@')[0] };
     },
-    async reset(email, captchaToken) { await gotrue('recover', { email, ...captcha(captchaToken) }); },
+    async reset(email, captchaToken) { recovery = null; await gotrue('recover', { email, ...captcha(captchaToken) }); },
+    // The reset email carries a 6-digit code typed into the app, so the user never has to leave the app (links from
+    // a mail app often open in the browser instead of the installed Android app). A verified code is single use:
+    // keep its session so a rejected password (too weak, same as before) can be retried without a new code.
+    async resetWithCode(email, code, password) {
+      if (!recovery || recovery.email !== email || recovery.s.expires_at < Date.now() + 30000) {
+        try { recovery = { email, s: toSession(await gotrue('verify', { type: 'recovery', email, token: code.replace(/\s/g, '') })) }; }
+        catch { throw new Error('That code is wrong or has expired. Check the latest email from Bebig, or send a new code.'); }
+      }
+      const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${recovery.s.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (j?.error_code === 'same_password' || j?.code === 'same_password') throw new Error('That’s your current password. Choose a different one, or go back and sign in with it.');
+        throw new Error(weakPasswordMessage(j) || 'Your password couldn’t be changed. Please try again.');
+      }
+      const s = recovery.s; recovery = null;
+      saveAuth(s);
+      return { user_id: s.user.id, email: s.user.email, display_name: s.user.user_metadata?.display_name || s.user.email.split('@')[0] };
+    },
     async signOut() { stopRealtime(); try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name: display_name.slice(0, 80) }, 'return=minimal'); },
@@ -449,6 +468,21 @@ export async function phraseAnswer(baby_id: string, question: string, verified_a
     if (!r.ok) return verified_answer;
     return (await r.json()).content || verified_answer;
   } catch { return verified_answer; }
+}
+
+/** Emails a caregiver invitation (send-invite Edge Function). The invitation row must reach the server first, so this
+ *  syncs and retries a few times while the function reports `not_found`. Returns the function's status word. */
+export async function sendInviteEmail(access_id: string): Promise<string> {
+  for (let i = 0; i < 4; i++) {
+    if (i) await new Promise(r => setTimeout(r, 2500));
+    await cycle();
+    try {
+      const r = await fetch(`${URL_}/functions/v1/send-invite`, { method: 'POST', signal: AbortSignal.timeout?.(15000), headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ access_id }) });
+      const j = await r.json().catch(() => ({}));
+      if (j?.status !== 'not_found') return typeof j?.status === 'string' ? j.status : 'failed'; // not deployed yet → 'failed'
+    } catch { return navigator.onLine ? 'failed' : 'offline'; }
+  }
+  return 'not_synced';
 }
 
 /** Side-by-side counts of what this device holds and what the server holds, for troubleshooting sync. */

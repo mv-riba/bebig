@@ -9,7 +9,7 @@ import {
   deleteAccount, currentUserId, accessibleBabies, selectBaby, unsyncedCount, leaveBaby,
 } from '../lib/store';
 import { formatDateKey, describeAge, daysBetween, todayKey, listTimezones } from '../lib/time';
-import { syncMode, syncNow, syncStatus, syncDiagnostics } from '../lib/sync';
+import { syncMode, syncNow, syncStatus, syncDiagnostics, emailInvite } from '../lib/sync';
 import { formatAgo } from '../lib/time';
 import { config } from '../lib/config';
 import type { FeedingPreference } from '../lib/types';
@@ -157,13 +157,44 @@ export function FeedingPrefPage({ onBack }: { onBack: () => void }) {
   );
 }
 
+/** Opens the phone's share sheet with a ready invitation message (falls back to copying it). */
+async function shareInvite(email: string, baby: string): Promise<'shared' | 'cancelled' | 'copied' | 'failed'> {
+  const text = `I’ve invited you to help keep track of ${baby}’s day on Bebig. Sign in or create a free account at https://bebig.app/ with ${email}, and you’ll see the invitation.`;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Bebig invitation', text }); return 'shared'; }
+    catch (e: any) { if (e?.name === 'AbortError') return 'cancelled'; }
+  }
+  try { await navigator.clipboard.writeText(text); return 'copied'; } catch { return 'failed'; }
+}
+
 export function SharingPage({ onBack }: { onBack: () => void }) {
   const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const plus = usePlus();
   const b = ctx!.baby; const isOwner = ctx!.role === 'owner';
   const rows = useStore(s => Object.values(s.access).filter(a => a.baby_id === b.baby_id && a.invitation_status !== 'declined'));
   const users = useStore(s => s.users);
   const [email, setEmail] = useState(''); const [err, setErr] = useState<string | null>(null); const [limitHit, setLimitHit] = useState(false);
-  const invite = () => { setErr(null); setLimitHit(false); try { inviteCaregiver(b.baby_id, email, 'caregiver', plus?.caregivers); setEmail(''); toast('Invitation created'); } catch (e: any) { setErr(e.message); setLimitHit(!!e.planLimit); } };
+  const babyFirst = b.name.trim().split(/\s+/)[0] || b.name;
+  const share = async (to: string) => {
+    const r = await shareInvite(to, babyFirst);
+    if (r === 'copied') toast('Invitation message copied — paste it into a message');
+    else if (r === 'failed') toast('Couldn’t open sharing on this device');
+  };
+  const invite = () => {
+    setErr(null); setLimitHit(false);
+    try {
+      const to = email.trim().toLowerCase();
+      const access_id = inviteCaregiver(b.baby_id, email, 'caregiver', plus?.caregivers); setEmail('');
+      if (syncMode() !== 'remote') { toast('Invitation created'); return; }
+      toast(`Sending an invitation to ${to}…`);
+      emailInvite(access_id).then(st => {
+        const shareIt = { label: 'Share', run: () => share(to) };
+        if (st === 'sent') toast(`Invitation emailed to ${to}`, shareIt);
+        else if (st === 'offline' || st === 'not_synced') toast('Invitation saved. We couldn’t email it yet — you can share it instead.', shareIt);
+        else if (st === 'daily_limit') toast('Invitation saved. You’ve sent a lot of invitation emails today — share this one instead.', shareIt);
+        else toast('Invitation saved, but the email couldn’t be sent. Share it instead.', shareIt);
+      });
+    } catch (e: any) { setErr(e.message); setLimitHit(!!e.planLimit); }
+  };
   const active = rows.filter(r => r.invitation_status === 'accepted'), pending = rows.filter(r => r.invitation_status === 'pending'), revoked = rows.filter(r => r.invitation_status === 'revoked');
   if (!plus) return null;
   const nameOf = (a: typeof rows[number]) => (a.user_id && users[a.user_id]?.display_name) || a.invited_email || '?'; // an empty name must not crash the page
@@ -196,7 +227,10 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
         <div className="alert notice"><PlusBadge /><span>Paused caregivers can’t see {b.name}’s records until you get Bebig Plus. Nothing they logged has been deleted. <PlusLink /></span></div>
       )}
       {pending.length > 0 && <><h2 className="sec-title">Pending invitations</h2><div className="card list">{pending.map(a => (
-        <Row key={a.access_id} title={a.invited_email} sub="Waiting for them to sign in and accept" right={isOwner ? <button className="btn soft small" onClick={() => revokeAccess(a.access_id)}>Cancel</button> : null} />
+        <Row key={a.access_id} title={a.invited_email} sub="Waiting for them to sign in and accept" right={isOwner ? <span className="btn-row">
+          <button className="btn soft small" onClick={() => share(a.invited_email)}>Share</button>
+          <button className="btn soft small" onClick={() => revokeAccess(a.access_id)}>Cancel</button>
+        </span> : null} />
       ))}</div></>}
       {isOwner ? (
         <>
@@ -206,7 +240,7 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
           {err && <div className="alert error">{err}</div>}
           {limitHit && <PlusLink />}
           <button className="btn primary block" onClick={invite} disabled={!email}>Send invitation</button>
-          <p className="muted small">Caregivers can view, add and edit activity and measurements. Only you (the owner) can manage access or delete the profile. They’ll see the invitation after signing in with this email{syncMode() === 'local' ? ' — in local mode, on this device (try a second browser tab)' : ''}.</p>
+          <p className="muted small">Caregivers can view, add and edit activity and measurements. Only you (the owner) can manage access or delete the profile. {syncMode() === 'local' ? 'They’ll see the invitation after signing in with this email — in local mode, on this device (try a second browser tab).' : 'We’ll email them an invitation. They accept it by signing in or creating a free account with this email. You can also share the invitation yourself, e.g. in a message.'}</p>
         </>
       ) : <>
         <p className="muted small">Only the profile owner can invite or remove people.</p>
