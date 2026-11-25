@@ -139,6 +139,7 @@ export interface RemoteAuth {
   register(email: string, password: string, display_name: string, captchaToken?: string): Promise<{ user_id: string; email: string; display_name: string }>;
   signIn(email: string, password: string, captchaToken?: string): Promise<{ user_id: string; email: string; display_name: string }>;
   reset(email: string, captchaToken?: string): Promise<void>;
+  resetWithCode(email: string, code: string, password: string): Promise<{ user_id: string; email: string; display_name: string }>;
   signOut(): Promise<void>;
   deleteAccount(): Promise<void>;
   updateName(name: string): Promise<void>;
@@ -218,6 +219,14 @@ export async function resetPassword(email: string, newPassword: string, captchaT
   if (newPassword.length < 8) throw new Error('Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol.');
   const salt = uuid(); const hash = await hashPw(newPassword, salt);
   setState(s => { s.credentials[email] = { ...c, salt, hash }; s.audit.push({ at: nowIso(), user_id: c.user_id, action: 'auth.password_reset' }); });
+}
+
+/** Remote mode: finish a reset with the code from the email; signs the user in with the new password. */
+export async function resetPasswordWithCode(email: string, code: string, newPassword: string) {
+  if (!remote) throw new Error('Not available in local mode.');
+  if (!/^\d{6,10}$/.test(code.replace(/\s/g, ''))) throw new Error('Please enter the code from the email.');
+  if (newPassword.length < 8) throw new Error('Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol.');
+  return adoptRemoteUser(await remote.resetWithCode(email.trim().toLowerCase(), code, newPassword));
 }
 
 export function updateAccount(patch: Partial<Pick<User, 'display_name'>>) {
@@ -393,6 +402,7 @@ export function inviteCaregiver(baby_id: string, email: string, role: Role = 'ca
     queue(s, 'access', s.access[access_id]);
     s.audit.push({ at: t, user_id: uid, action: 'access.invited', detail: email });
   });
+  return access_id;
 }
 export function respondToInvite(access_id: string, accept: boolean) {
   const uid = currentUserId(); if (!uid) return;

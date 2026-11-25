@@ -1,7 +1,7 @@
 import { PausedBanner } from '../ui/plus';
 import React, { useState } from 'react';
 import { Field, Segmented, Wave } from '../ui/ui';
-import { register, signIn, resetPassword, createBaby, respondToInvite, useStore, pendingInvitesForMe, signOut } from '../lib/store';
+import { register, signIn, resetPassword, resetPasswordWithCode, createBaby, respondToInvite, useStore, pendingInvitesForMe, signOut } from '../lib/store';
 import { createDemoBaby } from '../lib/seed';
 import { guessTimezone, todayKey } from '../lib/time';
 import { TzSelect, resizeImage } from './Settings';
@@ -26,8 +26,12 @@ export function AuthScreen() {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(() => { try { const m = sessionStorage.getItem('bebig:authmsg'); sessionStorage.removeItem('bebig:authmsg'); return m; } catch { return null; } });
   const [busy, setBusy] = useState(false);
+  // remote reset is two steps: send a code to the email, then type the code + a new password (never leaves the app)
+  const [codeSent, setCodeSent] = useState(false); const [code, setCode] = useState('');
   const remoteMode = syncMode() === 'remote';
-  const needCaptcha = remoteMode && captchaEnabled();
+  const enteringCode = mode === 'reset' && remoteMode && codeSent;
+  const needCaptcha = remoteMode && captchaEnabled() && !enteringCode; // the code itself proves the email; no check needed
+  const goSignIn = () => { setMode('signin'); setCodeSent(false); setCode(''); setErr(null); };
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
   const submit = async (e: React.FormEvent) => {
@@ -38,7 +42,8 @@ export function AuthScreen() {
     try {
       if (mode === 'signin') await signIn(email, pw, token);
       else if (mode === 'register') await register(email, pw, name, token);
-      else if (remoteMode) { await resetPassword(email, '', token); setMsg('If an account exists for that email, we’ve sent a link to reset your password.'); setMode('signin'); }
+      else if (enteringCode) { await resetPasswordWithCode(email, code, pw); setPw(''); setCode(''); setCodeSent(false); }
+      else if (remoteMode) { await resetPassword(email, '', token); setCodeSent(true); setPw(''); setMsg(`If ${email.trim()} has a Bebig account, we’ve emailed it a code. It can take a minute — check spam too.`); }
       else { await resetPassword(email, pw); setMsg('If an account exists for that email, its password has been updated. You can sign in now.'); setMode('signin'); setPw(''); }
     } catch (e: any) {
       const m: string = e.message || 'Something went wrong';
@@ -59,9 +64,11 @@ export function AuthScreen() {
       <form className="card auth-card" onSubmit={submit}>
         {mode !== 'reset' && <Segmented label="Account" value={mode} onChange={m => { setMode(m); setErr(null); }} options={[{ value: 'signin', label: 'Sign in' }, { value: 'register', label: 'Create account' }]} />}
         {mode === 'reset' && <h2>Reset password</h2>}
+        {mode === 'reset' && remoteMode && !codeSent && <p className="muted small">We’ll email you a code. Enter it here with your new password — you don’t need to leave the app.</p>}
         {mode === 'register' && <Field label="Your name"><input autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Sanne" /></Field>}
-        <Field label="Email"><input type="email" autoComplete="email" required value={email} onChange={e => setEmail(e.target.value)} /></Field>
-        {!(mode === 'reset' && remoteMode) && <Field label={mode === 'reset' ? 'New password' : 'Password'} hint={mode !== 'signin' ? '(8+ characters, upper and lower case, a number and a symbol)' : undefined}>
+        <Field label="Email"><input type="email" autoComplete="email" required readOnly={enteringCode} value={email} onChange={e => setEmail(e.target.value)} /></Field>
+        {enteringCode && <Field label="Code from the email"><input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,12}" maxLength={12} required value={code} onChange={e => setCode(e.target.value.replace(/[^0-9 ]/g, ''))} /></Field>}
+        {(!(mode === 'reset' && remoteMode) || enteringCode) && <Field label={mode === 'reset' ? 'New password' : 'Password'} hint={mode !== 'signin' ? '(8+ characters, upper and lower case, a number and a symbol)' : undefined}>
           <input type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={mode === 'signin' ? 1 : 8} value={pw} onChange={e => setPw(e.target.value)} />
         </Field>}
         {mode === 'register' && <label className="consent"><input type="checkbox" required />
@@ -69,10 +76,11 @@ export function AuthScreen() {
         {err && <div className="alert error" role="alert">{err}</div>}
         {msg && <div className="alert ok" role="status">{msg}</div>}
         {needCaptcha && <Captcha action={mode === 'register' ? 'signup' : mode} resetSignal={captchaReset} onToken={setCaptchaToken} />}
-        <button className="btn primary block" disabled={busy || (needCaptcha && !captchaToken)}>{mode === 'signin' ? 'Sign in' : mode === 'register' ? 'Create account' : remoteMode ? 'Send reset link' : 'Update password'}</button>
+        <button className="btn primary block" disabled={busy || (needCaptcha && !captchaToken)}>{mode === 'signin' ? 'Sign in' : mode === 'register' ? 'Create account' : enteringCode ? 'Set new password' : remoteMode ? 'Email me a code' : 'Update password'}</button>
         {mode === 'signin' && <button type="button" className="link small center-block" onClick={() => { setMode('reset'); setErr(null); }}>Forgot password?</button>}
-        {mode === 'reset' && <button type="button" className="link small center-block" onClick={() => setMode('signin')}>Back to sign in</button>}
-        {syncMode() === 'local' && <p className="muted tiny center">Local mode — accounts and records stay in this browser. {mode === 'reset' ? 'In the live app, a reset link is emailed instead.' : ''}</p>}
+        {enteringCode && <button type="button" className="link small center-block" onClick={() => { setCodeSent(false); setCode(''); setErr(null); setMsg(null); }}>Didn’t get it? Send a new code</button>}
+        {mode === 'reset' && <button type="button" className="link small center-block" onClick={goSignIn}>Back to sign in</button>}
+        {syncMode() === 'local' && <p className="muted tiny center">Local mode — accounts and records stay in this browser. {mode === 'reset' ? 'In the live app, a reset code is emailed instead.' : ''}</p>}
       </form>
       <p className="muted tiny center">Bebig is made by MVR Studios · <span className="nowrap">Business ID 3485332-7</span><br /><a className="link" href="/privacy/" target="_blank" rel="noopener">Privacy</a> · <a className="link" href="/terms/" target="_blank" rel="noopener">Terms</a> · <a className="link" href="mailto:support@bebig.app">support@bebig.app</a></p>
       <Wave tone="lav" />
