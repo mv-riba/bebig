@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
+import { useNav, TAB_LABEL } from '../ui/nav';
 import { useBaby } from '../ui/hooks';
 import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId, earliestTimerEnd } from '../lib/store';
 import { StillCheck, NewFeedCheck } from '../ui/still';
@@ -19,7 +20,7 @@ export function defaultTime(tz: string, onKey?: string) {
 }
 
 export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
   const existing: FeedingEntry | undefined = entryId ? getState().feeds[entryId] : undefined;
   const pref = ctx?.baby.feeding_preference ?? 'combination';
   const allowed: FeedingType[] = pref === 'breast' ? ['breast'] : pref === 'formula' ? ['formula'] : ['breast', 'expressed', 'formula'];
@@ -107,7 +108,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
   ].filter(o => allowed.includes(o.value));
 
   return (
-    <Page title={existing ? 'Edit Feed' : 'Add Feed'} onCancel={onDone} className="form-page"
+    <Page title={timer ? 'Feed' : existing ? 'Edit Feed' : 'Add Feed'} onCancel={timer ? undefined : onDone} onBack={timer ? onDone : undefined} backLabel={TAB_LABEL[nav.tab]} className="form-page"
       right={existing ? <button className="icon-btn danger" aria-label="Delete feed" onClick={() => { deleteEntry('feeds', existing.feed_id); toast('Feed deleted', { label: 'Undo', run: () => restoreEntry('feeds', existing.feed_id) }); onDone(); }}><ITrash /></button> : null}>
       {typeOpts.length > 1 && <Segmented size="lg" label="Feeding type" value={type} onChange={v => { if (!timer) setType(v); }} options={typeOpts} />}
 
