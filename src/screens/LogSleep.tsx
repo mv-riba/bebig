@@ -83,7 +83,7 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
         <Ring fraction={(el % 3600) / 3600 || 0.002}>
           <IBed size={34} />
           <div className="timer-big">{formatClock(el)}</div>
-          <div className="muted small">{a.status === 'paused' ? 'Paused' : 'Since sleep started'} · {formatTime(a.start_datetime, tz, prefs.time_format)}</div>
+          <div className="muted small">{a.status === 'paused' ? 'Paused · started' : 'Since sleep started ·'} {formatTime(a.start_datetime, tz, prefs.time_format)}</div>
         </Ring>
         <div className="btn-row">
           {a.status === 'paused'
