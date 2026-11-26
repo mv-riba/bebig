@@ -3,7 +3,8 @@ import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfi
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
 import { useNav, TAB_LABEL } from '../ui/nav';
 import { useBaby } from '../ui/hooks';
-import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId, earliestTimerEnd } from '../lib/store';
+import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId, earliestTimerEnd, continuableFeed, continueFeed, continuedFeedOf, restoreContinuedFeed, feedTimerOf } from '../lib/store';
+import { formatAgo } from '../lib/time';
 import { StillCheck, NewFeedCheck } from '../ui/still';
 import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, dayStart, zonedParts } from '../lib/time';
@@ -136,6 +137,22 @@ export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string;
         <div className="card timer-card">
           {!timer ? (
             <>
+              {(() => {
+                const last = continuableFeed(baby.baby_id, now);
+                if (!last) return null;
+                const sideTxt = last.breast_side === 'both' ? 'Both sides' : last.breast_side === 'left' ? 'Left' : last.breast_side === 'right' ? 'Right' : 'No side';
+                return (
+                  <div className="continue-card">
+                    <div className="continue-title">Still the same feed?</div>
+                    <p className="muted small">The {formatTime(last.start_datetime, tz, ctx.prefs.time_format)} feed ended {formatAgo(last.end_datetime!)} ({sideTxt} · {Math.round((last.duration_seconds ?? 0) / 60)} min). Carry it on, on the:</p>
+                    <div className="btn-row">
+                      <button className="btn primary" onClick={() => { continueFeed(last, 'left'); toast('Feed continued on the left'); }}><IPlay size={16} /> Left</button>
+                      <button className="btn primary" onClick={() => { continueFeed(last, 'right'); toast('Feed continued on the right'); }}><IPlay size={16} /> Right</button>
+                    </div>
+                    <div className="continue-or muted small">or start a new feed</div>
+                  </div>
+                );
+              })()}
               <p className="muted small">Start a timer on a side, or enter the feed manually below (you can still choose left, right or both).</p>
               <div className="btn-row">
                 <button className="btn soft" onClick={() => startFeedTimer(baby.baby_id, 'left')}><IPlay size={16} /> Left</button>
@@ -159,6 +176,7 @@ export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string;
               </NewFeedCheck>
               <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
               <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
+              {continuedFeedOf(timer.timer_id) && <div className="muted small">Continuing the {formatTime(timer.started_at, tz, ctx.prefs.time_format)} feed</div>}
               {timerStartedBy(timer) && <div className="muted small">Started by {timerStartedBy(timer)} · {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>}
               <Segmented label="Breast side" value={timer.side} onChange={v => switchFeedSide(baby.baby_id, v)} options={[{ value: 'left', label: 'Left' }, { value: 'right', label: 'Right' }]} />
               <div className="btn-row">
@@ -167,7 +185,7 @@ export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string;
                   : <button className="btn soft" onClick={() => resumeFeedTimer(baby.baby_id)}><IPlay size={16} /> Resume</button>}
                 <button className="btn primary" onClick={() => save(true)}><IStop size={16} /> Stop & save</button>
               </div>
-              <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) discardFeedTimer(baby.baby_id); }}>Discard timer</button>
+              <button className="link small" onClick={async () => { if (await confirm({ title: 'Discard this timer?', text: 'Nothing will be saved.', ok: 'Discard', danger: true })) { const id = timer.timer_id; discardFeedTimer(baby.baby_id); restoreContinuedFeed(id); } }}>Discard timer</button>
             </>
           )}
         </div>

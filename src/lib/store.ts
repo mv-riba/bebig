@@ -606,6 +606,52 @@ export function stopFeedTimer(baby_id: string, feed: Partial<FeedingEntry>, endA
   const t = feedTimerOf(baby_id); return t ? stopTimer(t.timer_id, 'feeds', feed, endAt) : null;
 }
 
+// ---------------- Continue a feed just saved (prototype) ----------------
+/** How soon after a breastfeed ended "Continue" is offered. */
+export const CONTINUE_WINDOW_MS = 15 * 60000;
+const CONT_KEY = 'bebig:continued';
+const continued = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem(CONT_KEY) || '{}'); } catch { return {}; } };
+/** The feed a running timer continues, if it was started with "Continue". */
+export const continuedFeedOf = (timer_id: string) => continued()[timer_id] ?? null;
+/** The latest breastfeed that ended within the window, if no timer is running. */
+export function continuableFeed(baby_id: string, now = Date.now(), s: State = state): FeedingEntry | null {
+  const f = live(s.feeds, baby_id).filter(x => x.feeding_type === 'breast' && x.end_datetime).sort((a, b) => Date.parse(b.end_datetime!) - Date.parse(a.end_datetime!))[0];
+  return f && now - Date.parse(f.end_datetime!) <= CONTINUE_WINDOW_MS && now >= Date.parse(f.end_datetime!) ? f : null;
+}
+/** Reopens a saved feed as a running timer: its time so far is replayed as timer taps at their original times
+ *  (start, side switch, pause when it ended), then it resumes now on `side`. The saved feed is removed; it comes
+ *  back if the timer is discarded. */
+export function continueFeed(f: FeedingEntry, side: 'left' | 'right') {
+  assertAccess(f.baby_id);
+  if (feedTimerOf(f.baby_id)) return null;
+  const start = Date.parse(f.start_datetime);
+  const l = f.left_duration_seconds ?? (f.breast_side === 'left' ? f.duration_seconds ?? 0 : 0);
+  const r = f.right_duration_seconds ?? (f.breast_side === 'right' ? f.duration_seconds ?? 0 : 0);
+  const u = Math.max(0, (f.duration_seconds ?? 0) - l - r);
+  const iso = (t: number) => new Date(t).toISOString();
+  const first: 'left' | 'right' | null = l > 0 ? 'left' : r > 0 ? 'right' : null;
+  const row = newTimer(f.baby_id, 'feed', null, first, f.start_datetime);
+  const now = nowIso();
+  setState(s => {
+    s.timers[row.timer_id] = row;
+    queue(s, 'timers', row, { kind: 'start', at: row.started_at, side: first });
+    let at = start + (first === 'left' ? l : r) * 1000;
+    if (first && l > 0 && r > 0) { queue(s, 'timers', row, { kind: 'side', at: iso(at), side: 'right' }); at += r * 1000; }
+    at += u * 1000;
+    queue(s, 'timers', row, { kind: 'pause', at: iso(Math.min(at, Date.parse(now))) });
+    if (side !== (first && r > 0 ? 'right' : first)) queue(s, 'timers', row, { kind: 'side', at: now, side });
+    queue(s, 'timers', row, { kind: 'resume', at: now });
+    row.left_seconds = l; row.right_seconds = r; row.unsided_seconds = u; row.side = side; row.segment_started_at = now; row.updated_at = now;
+  });
+  deleteEntry('feeds', f.feed_id);
+  try { localStorage.setItem(CONT_KEY, JSON.stringify({ ...continued(), [row.timer_id]: f.feed_id })); } catch { /* */ }
+  return row.timer_id;
+}
+/** Discarding a continued timer brings the feed it continued back. */
+export function restoreContinuedFeed(timer_id: string) {
+  const id = continuedFeedOf(timer_id); if (id) restoreEntry('feeds', id);
+}
+
 // ---------------- Sleep timer (persisted as an active SleepEntry) ----------------
 
 export function activeSleep(baby_id: string, s: State = state): SleepEntry | null {
