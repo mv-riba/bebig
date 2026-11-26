@@ -12,7 +12,10 @@ export function StillCheck({ kind, id, startedAt, earliestEnd, tz, fmt, now, onE
 }) {
   const [, bump] = useState(0); const [asking, setAsking] = useState(false); const [err, setErr] = useState<string | null>(null);
   const feed = kind === 'feed';
-  const [end, setEnd] = useState(() => toLocalInput(new Date(Math.min(now, Math.max(earliestEnd, Date.parse(startedAt) + (feed ? 30 : 180) * 60000))), tz));
+  // the suggested end is worked out when the question is answered, not when the screen opened: a screen left open on a
+  // locked phone keeps its first `now`, which made the suggestion the start time and saving it failed
+  const suggestEnd = () => toLocalInput(new Date(Math.min(Date.now(), Math.max(earliestEnd, Date.parse(startedAt) + (feed ? 30 : 180) * 60000))), tz);
+  const [end, setEnd] = useState(suggestEnd);
   if (!asking && !stillDue(kind, id, startedAt, now)) return null;
   const save = () => {
     setErr(null);
@@ -30,7 +33,7 @@ export function StillCheck({ kind, id, startedAt, earliestEnd, tz, fmt, now, onE
       {!asking ? (
         <div className="btn-row">
           <button className="btn soft" onClick={() => { confirmStill(id); bump(x => x + 1); }}>{feed ? 'Yes, still feeding' : 'Yes, still asleep'}</button>
-          <button className="btn primary" onClick={() => setAsking(true)}>{feed ? 'Finished earlier' : 'Woke up earlier'}</button>
+          <button className="btn primary" onClick={() => { setEnd(suggestEnd()); setAsking(true); }}>{feed ? 'Finished earlier' : 'Woke up earlier'}</button>
         </div>
       ) : (
         <>
@@ -59,7 +62,8 @@ export function NewFeedCheck({ timer, startedBy, earliestEnd, tz, fmt, now, onNe
   const id = timer.timer_id;
   const [asking, setAsking] = useState(() => cameBackDue(timer, now));
   const [ending, setEnding] = useState(false); const [err, setErr] = useState<string | null>(null);
-  const [end, setEnd] = useState(() => toLocalInput(new Date(Math.min(now, Math.max(earliestEnd, Date.parse(timer.started_at) + 30 * 60000))), tz));
+  const suggestEnd = () => toLocalInput(new Date(Math.min(Date.now(), Math.max(earliestEnd, Date.parse(timer.started_at) + 30 * 60000))), tz);
+  const [end, setEnd] = useState(suggestEnd);
   // while this screen is on view the timer is being watched; coming back after 45 minutes away asks again
   useEffect(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
@@ -85,7 +89,7 @@ export function NewFeedCheck({ timer, startedBy, earliestEnd, tz, fmt, now, onNe
       {!ending ? (
         <div className="btn-row">
           <button className="btn soft" onClick={done}>Same feed</button>
-          <button className="btn primary" onClick={() => setEnding(true)}>New feed</button>
+          <button className="btn primary" onClick={() => { setEnd(suggestEnd()); setEnding(true); }}>New feed</button>
         </div>
       ) : (
         <>
