@@ -93,3 +93,40 @@ test('old "Yes" answers are cleaned up; the current timer’s answer is kept', (
   for (const k of ['current', 'recent', 'old0', 'old29']) if (localStorage.getItem('bebig:still:' + k)) keys.push(k);
   assert.deepEqual(keys, ['current', 'recent']);
 });
+
+test('"Is this a new feed?": coming back to a feed timer nobody has touched or watched for 45 minutes', async () => {
+  const { cameBackDue, markSeen } = await import('../src/lib/still.ts');
+  const now = Date.now();
+  // 26 Nov: started 03:59, phone put down, back at 06:00
+  const t = { timer_id: 'cb1', started_at: ago(121), updated_at: ago(121) };
+  assert.equal(cameBackDue(t, now), true);
+  // a feed timer only 40 minutes old: not asked
+  assert.equal(cameBackDue({ timer_id: 'cb2', started_at: ago(40), updated_at: ago(40) }, now), false);
+  // watched on this phone until 10 minutes ago: not asked
+  markSeen('cb3', now - 10 * 60000);
+  assert.equal(cameBackDue({ timer_id: 'cb3', started_at: ago(70), updated_at: ago(70) }, now), false);
+  // a side switch (by anyone) 20 minutes ago: not asked
+  assert.equal(cameBackDue({ timer_id: 'cb4', started_at: ago(70), updated_at: ago(20) }, now), false);
+  // "Same feed" answered: not asked again for 45 minutes
+  confirmStill('cb1', now);
+  assert.equal(cameBackDue(t, now + 30 * 60000), false);
+  assert.equal(cameBackDue(t, now + 46 * 60000), true);
+});
+
+test('"New feed": the left-on timer is saved with its real end and a new timer starts on the chosen side', () => {
+  clear();
+  const id = store.startFeedTimer(A, 'left')!;
+  store.setState(s => { s.timers[id].started_at = ago(121); s.timers[id].segment_started_at = ago(121); });
+  const end = ago(100);
+  const feed = store.stopFeedTimer(A, { baby_id: A, feeding_type: 'breast', start_datetime: ago(121), end_datetime: end, duration_seconds: 21 * 60, breast_side: 'left', left_duration_seconds: 21 * 60, right_duration_seconds: null, observations: [], notes: null }, end);
+  assert.ok(feed);
+  const next = store.startFeedTimer(A, 'right');
+  assert.notEqual(next, id);
+  const s = store.getState();
+  assert.equal(s.timers[id].ended_at, end);
+  assert.equal(s.timers[next].side, 'right');
+  assert.equal(s.timers[next].ended_at, null);
+  // the server gets Stop (old timer) before Start (new one), so the new one isn't joined to the old
+  const ops = s.outbox.filter(o => o.table === 'timers').map(o => `${o.action?.kind}:${o.row.timer_id === id ? 'old' : 'new'}`);
+  assert.deepEqual(ops.filter(o => o !== 'start:old'), ['stop:old', 'start:new']);
+});
