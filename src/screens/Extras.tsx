@@ -117,17 +117,19 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
 }
 
 // ---------------- Log / edit an extra entry ----------------
-export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: string; entryId?: string; onKey?: string; onDone: () => void }) {
+export function ExtraForm({ trackerId, entryId, draftId, onKey, onDone }: { trackerId?: string; entryId?: string; draftId?: string; onKey?: string; onDone: () => void }) {
   const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000); const canX = useCanExtras();
   const timer = useStore(s => extraTimersOf(s)[trackerId ?? ''] ?? null);
   const ex: ExtraEntry | undefined = entryId ? getState().extras[entryId] : undefined;
+  // the starting values: the entry being edited, or one just undone (opened again as a new entry to correct)
+  const seed: ExtraEntry | undefined = ex ?? (draftId ? getState().extras[draftId] : undefined);
   const t: TrackerDef | undefined = getState().trackers[ex?.tracker_id ?? trackerId ?? ''];
   const tz = ctx?.baby.timezone ?? 'UTC';
-  const [time, setTime] = useState(toLocalInput(ex?.datetime ?? defaultTime(tz, onKey), tz));
-  const [value, setValue] = useState<string>(ex?.value_num != null ? String(ex.value_num) : '');
-  const [mins, setMins] = useState<number | null>(ex?.duration_seconds != null ? Math.round(ex.duration_seconds / 60) : null);
-  const [level, setLevel] = useState<Level | null>(ex?.level ?? null);
-  const [notes, setNotes] = useState(ex?.notes ?? '');
+  const [time, setTime] = useState(toLocalInput(seed?.datetime ?? defaultTime(tz, onKey), tz));
+  const [value, setValue] = useState<string>(seed?.value_num != null ? String(seed.value_num) : '');
+  const [mins, setMins] = useState<number | null>(seed?.duration_seconds != null ? Math.round(seed.duration_seconds / 60) : null);
+  const [level, setLevel] = useState<Level | null>(seed?.level ?? null);
+  const [notes, setNotes] = useState(seed?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
   if (!ctx || !t) return null;
   // a running timer can always be stopped and saved, even if Plus ended while it ran
@@ -152,7 +154,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
     }
     const id = upsertEntry('extras', { ...(ex ?? {}), baby_id: ctx.baby.baby_id, tracker_id: t.tracker_id, datetime: iso,
       value_num: t.kind === 'amount' ? num : null, duration_seconds: t.kind === 'duration' ? (mins ?? 0) * 60 : null, level: t.kind === 'level' ? level : null, notes: notes.trim() || null });
-    toast(ex ? `${t.name} updated` : `${t.name} logged`, ex ? undefined : { label: 'Undo', run: () => deleteEntry('extras', id) });
+    toast(ex ? `${t.name} updated` : `${t.name} logged`, ex ? undefined : { label: 'Undo', run: () => { deleteEntry('extras', id); nav.push({ name: 'extra', trackerId: t.tracker_id, draftId: id }); } });
     onDone();
   };
   const timerAllowed = t.kind === 'duration' && !ex && !onKey;
@@ -171,7 +173,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
             {timer.segment_started_at
               ? <button className="btn soft" onClick={() => pauseExtraTimer(t.tracker_id)}><IPause size={16} /> Pause</button>
               : <button className="btn soft" onClick={() => resumeExtraTimer(t.tracker_id)}><IPlay size={16} /> Resume</button>}
-            <button className="btn primary" onClick={() => { try { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (!r) throw new Error('This timer has already been stopped.'); toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => deleteEntry('extras', r.id) }); onDone(); } catch (x: any) { setErr(x.message); } }}><IStop size={16} /> Stop & save</button>
+            <button className="btn primary" onClick={() => { try { const r = stopExtraTimer(t.tracker_id, notes.trim() || null); if (!r) throw new Error('This timer has already been stopped.'); toast(`${t.name} saved · ${formatDuration(r.secs)}`, { label: 'Undo', run: () => { deleteEntry('extras', r.id); nav.push({ name: 'extra', trackerId: t.tracker_id, draftId: r.id }); } }); onDone(); } catch (x: any) { setErr(x.message); } }}><IStop size={16} /> Stop & save</button>
           </div>
           <button className="link small" onClick={async () => { if (await confirm({ title: `Discard the ${t.name} timer?`, text: 'Nothing will be saved.', ok: 'Discard', danger: true })) discardExtraTimer(t.tracker_id); }}>Discard timer</button>
         </>

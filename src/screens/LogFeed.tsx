@@ -19,28 +19,30 @@ export function defaultTime(tz: string, onKey?: string) {
   return new Date(dayStart(onKey, tz).getTime() + (p.h * 60 + p.mi) * 60000).toISOString();
 }
 
-export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
+export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string; draftId?: string; onKey?: string; onDone: () => void }) {
   const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
   const existing: FeedingEntry | undefined = entryId ? getState().feeds[entryId] : undefined;
+  // the starting values: the entry being edited, or one just undone (opened again as a new feed to correct)
+  const seed: FeedingEntry | undefined = existing ?? (draftId ? getState().feeds[draftId] : undefined);
   const pref = ctx?.baby.feeding_preference ?? 'combination';
   const allowed: FeedingType[] = pref === 'breast' ? ['breast'] : pref === 'formula' ? ['formula'] : ['breast', 'expressed', 'formula'];
-  if (existing && !allowed.includes(existing.feeding_type)) allowed.push(existing.feeding_type); // preserve historical types
+  if (seed && !allowed.includes(seed.feeding_type)) allowed.push(seed.feeding_type); // preserve historical types
   // a breastfeeding timer still running (e.g. the preference was changed to formula meanwhile) must stay reachable
   const runningFeed = !existing && !!ctx?.feedTimer;
   if (runningFeed && !allowed.includes('breast')) allowed.unshift('breast');
   const tz = ctx?.baby.timezone ?? 'UTC';
 
-  const [type, setType] = useState<FeedingType>(existing?.feeding_type ?? (runningFeed ? 'breast' : allowed[0]));
-  const [start, setStart] = useState(toLocalInput(existing?.start_datetime ?? defaultTime(tz, onKey), tz));
-  const [end, setEnd] = useState(existing?.end_datetime && existing.feeding_type !== 'breast' ? toLocalInput(existing.end_datetime, tz) : '');
-  const [durMin, setDurMin] = useState<number | null>(existing?.duration_seconds != null ? Math.round(existing.duration_seconds / 60) : null);
-  const [left, setLeft] = useState<number | null>(existing?.left_duration_seconds != null ? Math.round(existing.left_duration_seconds / 60) : null);
-  const [right, setRight] = useState<number | null>(existing?.right_duration_seconds != null ? Math.round(existing.right_duration_seconds / 60) : null);
+  const [type, setType] = useState<FeedingType>(seed?.feeding_type ?? (runningFeed ? 'breast' : allowed[0]));
+  const [start, setStart] = useState(toLocalInput(seed?.start_datetime ?? defaultTime(tz, onKey), tz));
+  const [end, setEnd] = useState(seed?.end_datetime && seed.feeding_type !== 'breast' ? toLocalInput(seed.end_datetime, tz) : '');
+  const [durMin, setDurMin] = useState<number | null>(seed?.duration_seconds != null ? Math.round(seed.duration_seconds / 60) : null);
+  const [left, setLeft] = useState<number | null>(seed?.left_duration_seconds != null ? Math.round(seed.left_duration_seconds / 60) : null);
+  const [right, setRight] = useState<number | null>(seed?.right_duration_seconds != null ? Math.round(seed.right_duration_seconds / 60) : null);
   const inferSide = (e?: FeedingEntry) => e?.breast_side ?? (e && e.left_duration_seconds && e.right_duration_seconds ? 'both' : e?.left_duration_seconds ? 'left' : e?.right_duration_seconds ? 'right' : null);
-  const [side, setSide] = useState<'left' | 'right' | 'both' | null>(inferSide(existing));
-  const [qty, setQty] = useState<number | null>(existing?.quantity_ml ?? null);
-  const [obs, setObs] = useState<string[]>(existing?.observations ?? []);
-  const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [side, setSide] = useState<'left' | 'right' | 'both' | null>(inferSide(seed));
+  const [qty, setQty] = useState<number | null>(seed?.quantity_ml ?? null);
+  const [obs, setObs] = useState<string[]>(seed?.observations ?? []);
+  const [notes, setNotes] = useState(seed?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
 
   // keep total in sync with per-side durations when those are used
@@ -96,7 +98,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
       const id = fromTimer ? stopFeedTimer(baby.baby_id, row, endAt) : upsertEntry('feeds', row);
       if (!id) throw new Error('This timer has already been stopped.');
       if (next) { startFeedTimer(baby.baby_id, next); toast(`Earlier feed saved. New feed started on the ${next}.`); return; }
-      toast(existing ? 'Feed updated' : 'Feed saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('feeds', id) });
+      toast(existing ? 'Feed updated' : 'Feed saved', existing ? undefined : { label: 'Undo', run: () => { deleteEntry('feeds', id); nav.push({ name: 'feed', draftId: id }); } });
       onDone();
     } catch (e: any) { setErr(e.message); }
   };
