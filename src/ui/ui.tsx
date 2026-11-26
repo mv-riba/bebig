@@ -136,7 +136,7 @@ export function Wave({ tone = 'sage' }: { tone?: 'sage' | 'peach' | 'lav' }) {
 
 
 // ---------- In-app confirmation dialog (replaces window.confirm/prompt; works in installed PWAs & embedded frames) ----------
-interface ConfirmOpts { title: string; text?: string; ok?: string; danger?: boolean; typeWord?: string }
+interface ConfirmOpts { title: string; text?: string; ok?: string; cancel?: string; danger?: boolean; typeWord?: string }
 const ConfirmCtx = createContext<(o: ConfirmOpts) => Promise<boolean>>(async () => false);
 export const useConfirm = () => useContext(ConfirmCtx);
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
@@ -151,7 +151,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         {st?.text && <p className="muted">{st.text}</p>}
         {st?.typeWord && <Field label={`Type ${st.typeWord} to confirm`}><input autoFocus value={typed} onChange={e => setTyped(e.target.value)} /></Field>}
         <div className="btn-row" style={{ marginTop: 16 }}>
-          <button className="btn soft" onClick={() => close(false)}>Cancel</button>
+          <button className="btn soft" onClick={() => close(false)}>{st?.cancel ?? 'Cancel'}</button>
           <button className={`btn ${st?.danger ? 'danger' : 'primary'}`} disabled={!!st?.typeWord && typed.trim() !== st.typeWord} onClick={() => close(true)}>{st?.ok ?? 'Confirm'}</button>
         </div>
       </Sheet>
