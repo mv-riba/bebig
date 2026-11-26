@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { useStore, currentUserId, selectedBaby, isRemote, isInitialPullDone, onNotice } from './lib/store';
 import { Logo } from './screens/Auth';
 import { NavCtx, Tab, Route } from './ui/nav';
@@ -41,7 +41,10 @@ function Shell() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
-  const push = useCallback((r: Route) => { history.pushState({ r: true }, ''); setStack(s => [...s, r]); window.scrollTo(0, 0); }, []);
+  // Where the tab was scrolled to when the first screen opened on top of it, so coming back lands in the same place
+  const tabScroll = useRef(0);
+  const depth = useRef(0); depth.current = stack.length;
+  const push = useCallback((r: Route) => { if (depth.current === 0) tabScroll.current = window.scrollY; history.pushState({ r: true }, ''); setStack(s => [...s, r]); window.scrollTo(0, 0); }, []);
   // Close the screen in the same render as the save or stop that called this. history.back() is asynchronous, so
   // waiting for its popstate showed the screen's next state for a moment (e.g. a stopped sleep timer flashed the
   // Edit Sleep form, a stopped feed or extras timer flashed the manual form with its Save button).
@@ -50,6 +53,14 @@ function Shell() {
   const openDay = useCallback((k: string) => { setCalendarKey(k); setTab('calendar'); }, [setTab]);
 
   const top = stack[stack.length - 1];
+  // The tab stays mounted (hidden) under a screen opened on top of it. Unmounting it meant Home was rebuilt from
+  // scratch on the way back (avatar photo reloaded, cards and timeline laid out again), which showed as a flash.
+  const covered = !!top;
+  const wasCovered = useRef(false);
+  useLayoutEffect(() => {
+    if (wasCovered.current && !covered) window.scrollTo(0, tabScroll.current);
+    wasCovered.current = covered;
+  }, [covered]);
   const overlay = top && (() => {
     switch (top.name) {
       case 'feed': return <LogFeed key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
@@ -75,17 +86,16 @@ function Shell() {
   return (
     <NavCtx.Provider value={{ tab, setTab, push, pop, calendarKey, openDay, selectDay: setCalendarKey }}>
       <div className="app">
-        {overlay ? <main className="overlay">{overlay}</main> : (
-          <main className="main" id="main">
-            <InvitesBanner />
-            <PausedBanner />
-            {tab === 'home' && <Home />}
-            {tab === 'calendar' && <Calendar />}
-            {tab === 'insights' && <Insights />}
-            {tab === 'assistant' && <Assistant />}
-            {tab === 'settings' && <Settings />}
-          </main>
-        )}
+        {overlay && <main className="overlay">{overlay}</main>}
+        <main className="main" id="main" hidden={!!overlay}>
+          <InvitesBanner />
+          <PausedBanner />
+          {tab === 'home' && <Home />}
+          {tab === 'calendar' && <Calendar />}
+          {tab === 'insights' && <Insights />}
+          {tab === 'assistant' && <Assistant />}
+          {tab === 'settings' && <Settings />}
+        </main>
         {!overlay && (
           <nav className="tabbar" aria-label="Main">
             {TABS.map(t => (

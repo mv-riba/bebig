@@ -1,6 +1,8 @@
 import { createContext, useContext } from 'react';
 
 export type Tab = 'home' | 'calendar' | 'insights' | 'assistant' | 'settings';
+/** Tab names as the tab bar shows them, e.g. for a Back button that says where it goes. */
+export const TAB_LABEL: Record<Tab, string> = { home: 'Home', calendar: 'Calendar', insights: 'Insights', assistant: 'Assistant', settings: 'Settings' };
 export type Route =
   | { name: 'feed' | 'poo' | 'sleep'; entryId?: string; onKey?: string }
   | { name: 'measure'; id?: string; onKey?: string }

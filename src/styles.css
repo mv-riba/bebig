@@ -66,6 +66,7 @@ p { margin: .3em 0; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; } .btn-row > .btn { flex: 1; }
 .link { color: var(--accent-d); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; padding: 6px 0; }
+.back-link { min-height: 44px; gap: 2px; margin-left: -6px; white-space: nowrap; }
 .icon-btn { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; color: var(--ink-2); }
 .icon-btn:hover { background: var(--cream-2); } .icon-btn.danger { color: var(--red); }
 .round-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--cream-2); font-size: 1.3rem; display: grid; place-items: center; color: var(--ink-2); }
