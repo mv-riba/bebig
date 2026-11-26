@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Page, Segmented, Field, useToast, Wave, useConfirm } from '../ui/ui';
 import { IInfo, ITrash, IDrop, IPoo } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
+import { useNav } from '../ui/nav';
 import { upsertEntry, deleteEntry, restoreEntry, getState, live, currentUserId } from '../lib/store';
 import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { toLocalInput, fromLocalInput, daysBetween, dateKey, formatTime } from '../lib/time';
@@ -29,22 +30,25 @@ export function healthNotice(colour: PooColour | null | undefined, ageDays: numb
   return null;
 }
 
-export function LogPoo({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
+export function LogPoo({ entryId, draftId, onKey, onDone }: { entryId?: string; draftId?: string; onKey?: string; onDone: () => void }) {
+  const nav = useNav();
   const ctx = useBaby(); const confirm = useConfirm(); const toast = useToast();
   const existing: PooEntry | undefined = entryId ? getState().poos[entryId] : undefined;
+  // the starting values: the entry being edited, or one just undone (opened again as a new entry to correct)
+  const seed: PooEntry | undefined = existing ?? (draftId ? getState().poos[draftId] : undefined);
   const tz = ctx?.baby.timezone ?? 'UTC';
-  const [time, setTime] = useState(toLocalInput(existing?.datetime ?? defaultTime(tz, onKey), tz));
-  const [colour, setColour] = useState<PooColour | null>(existing?.colour ?? null);
-  const [size, setSize] = useState<PooSize | null>(existing?.size ?? null);
-  const [texture, setTexture] = useState<PooTexture | null>(existing?.texture ?? null);
-  const [notes, setNotes] = useState(existing?.notes ?? '');
-  const [ntype, setNtype] = useState<NappyType>(existing?.nappy_type ?? 'poo');
+  const [time, setTime] = useState(toLocalInput(seed?.datetime ?? defaultTime(tz, onKey), tz));
+  const [colour, setColour] = useState<PooColour | null>(seed?.colour ?? null);
+  const [size, setSize] = useState<PooSize | null>(seed?.size ?? null);
+  const [texture, setTexture] = useState<PooTexture | null>(seed?.texture ?? null);
+  const [notes, setNotes] = useState(seed?.notes ?? '');
+  const [ntype, setNtype] = useState<NappyType>(seed?.nappy_type ?? 'poo');
   const [err, setErr] = useState<string | null>(null);
   if (!ctx) return null;
   const { baby } = ctx;
   const iso = (() => { try { return fromLocalInput(time, tz); } catch { return new Date().toISOString(); } })();
   const ageDays = daysBetween(baby.date_of_birth, dateKey(iso, tz));
-  const nappy = !!baby.wet_tracking || (existing?.nappy_type != null && existing.nappy_type !== 'poo');
+  const nappy = !!baby.wet_tracking || (seed?.nappy_type != null && seed.nappy_type !== 'poo');
   const wetOnly = nappy && ntype === 'wet';
   const notice = wetOnly ? null : healthNotice(colour, ageDays);
   const noun = !nappy ? 'Poo' : 'Nappy';
@@ -59,7 +63,7 @@ export function LogPoo({ entryId, onKey, onDone }: { entryId?: string; onKey?: s
     }
     const id = upsertEntry('poos', { ...(existing ? { poo_id: existing.poo_id } : {}), baby_id: baby.baby_id, datetime: iso, nappy_type: nappy ? ntype : 'poo',
       colour: wetOnly ? null : colour, size: wetOnly ? null : size, texture: wetOnly ? null : texture, notes: notes.trim() || null });
-    toast(existing ? `${noun} updated` : wetOnly ? 'Wet nappy saved' : `${noun} saved`, existing ? undefined : { label: 'Undo', run: () => deleteEntry('poos', id) });
+    toast(existing ? `${noun} updated` : wetOnly ? 'Wet nappy saved' : `${noun} saved`, existing ? undefined : { label: 'Undo', run: () => { deleteEntry('poos', id); nav.push({ name: 'poo', draftId: id }); } });
     onDone();
   };
 

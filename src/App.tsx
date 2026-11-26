@@ -63,14 +63,14 @@ function Shell() {
   }, [covered]);
   const overlay = top && (() => {
     switch (top.name) {
-      case 'feed': return <LogFeed key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
-      case 'poo': return <LogPoo key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
-      case 'sleep': return <LogSleep key={top.entryId ?? 'new'} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
+      case 'feed': return <LogFeed key={top.entryId ?? top.draftId ?? 'new'} entryId={top.entryId} draftId={top.draftId} onKey={top.onKey} onDone={pop} />;
+      case 'poo': return <LogPoo key={top.entryId ?? top.draftId ?? 'new'} entryId={top.entryId} draftId={top.draftId} onKey={top.onKey} onDone={pop} />;
+      case 'sleep': return <LogSleep key={top.entryId ?? top.draftId ?? 'new'} entryId={top.entryId} draftId={top.draftId} onKey={top.onKey} onDone={pop} />;
       case 'measure': if (top.id === 'birth') return <ProfileEdit onBack={pop} />; return <MeasureForm key={top.id ?? 'new'} id={top.id} onKey={top.onKey} onDone={pop} />;
       case 'growth': return <GrowthCharts onBack={pop} />;
       case 'extras-settings': return <ExtrasSettings onBack={pop} />;
       case 'tracker': return <TrackerEditor key={top.id ?? 'new'} id={top.id} onDone={pop} />;
-      case 'extra': return <ExtraForm key={top.entryId ?? top.trackerId ?? 'new'} trackerId={top.trackerId} entryId={top.entryId} onKey={top.onKey} onDone={pop} />;
+      case 'extra': return <ExtraForm key={top.entryId ?? top.draftId ?? top.trackerId ?? 'new'} trackerId={top.trackerId} entryId={top.entryId} draftId={top.draftId} onKey={top.onKey} onDone={pop} />;
       case 'profile': return <ProfileEdit onBack={pop} />;
       case 'feeding-pref': return <FeedingPrefPage onBack={pop} />;
       case 'sharing': return <SharingPage onBack={pop} />;

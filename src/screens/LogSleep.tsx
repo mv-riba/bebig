@@ -23,15 +23,18 @@ function Ring({ fraction, children }: { fraction: number; children: React.ReactN
   );
 }
 
-export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
+export function LogSleep({ entryId, draftId, onKey, onDone }: { entryId?: string; draftId?: string; onKey?: string; onDone: () => void }) {
   const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
   const existing: SleepEntry | undefined = entryId ? getState().sleeps[entryId] : undefined;
+  // a sleep just undone from its "saved" toast: opened again as a new manual entry, filled in, to correct
+  const draft: SleepEntry | undefined = !existing && draftId ? getState().sleeps[draftId] : undefined;
+  const seed = existing ?? draft;
   const tz = ctx?.baby.timezone ?? 'UTC';
-  const [mode, setMode] = useState<'timer' | 'manual'>(existing || onKey ? 'manual' : 'timer');
-  const defStart = existing?.start_datetime ?? new Date(new Date(defaultTime(tz, onKey)).getTime() - 3600000).toISOString();
+  const [mode, setMode] = useState<'timer' | 'manual'>(seed || onKey ? 'manual' : 'timer');
+  const defStart = seed?.start_datetime ?? new Date(new Date(defaultTime(tz, onKey)).getTime() - 3600000).toISOString();
   const [start, setStart] = useState(toLocalInput(defStart, tz));
-  const [end, setEnd] = useState(toLocalInput(existing?.end_datetime ?? defaultTime(tz, onKey), tz));
-  const [notes, setNotes] = useState(existing?.notes ?? '');
+  const [end, setEnd] = useState(toLocalInput(seed?.end_datetime ?? defaultTime(tz, onKey), tz));
+  const [notes, setNotes] = useState(seed?.notes ?? '');
   const [err, setErr] = useState<string | null>(null);
   // a sleep timer left running over 24 hours: entered by hand instead, and the timer is discarded once that's saved
   const [replacing, setReplacing] = useState<SleepEntry | null>(null);
@@ -55,7 +58,7 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
     row.duration_seconds = Math.round(sleepElapsed(row as SleepEntry));
     const id = upsertEntry('sleeps', row);
     if (replacing) discardSleep(replacing);
-    toast(existing && !replacing ? 'Sleep updated' : 'Sleep saved', existing || replacing ? undefined : { label: 'Undo', run: () => deleteEntry('sleeps', id) });
+    toast(existing && !replacing ? 'Sleep updated' : 'Sleep saved', existing || replacing ? undefined : { label: 'Undo', run: () => { deleteEntry('sleeps', id); nav.push({ name: 'sleep', draftId: id }); } });
     onDone();
   };
 
