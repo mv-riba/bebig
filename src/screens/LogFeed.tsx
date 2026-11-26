@@ -3,7 +3,7 @@ import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfi
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { upsertEntry, deleteEntry, restoreEntry, startFeedTimer, pauseFeedTimer, resumeFeedTimer, switchFeedSide, discardFeedTimer, stopFeedTimer, feedTimerTotals, timerStartedBy, getState, live, currentUserId, earliestTimerEnd } from '../lib/store';
-import { StillCheck } from '../ui/still';
+import { StillCheck, NewFeedCheck } from '../ui/still';
 import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, dayStart, zonedParts } from '../lib/time';
 import type { FeedingEntry, FeedingType } from '../lib/types';
@@ -50,8 +50,9 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
   const timer = !existing && type === 'breast' ? feedTimer : null;
   const totals = timer ? feedTimerTotals(timer, now) : null;
 
-  /** endAt: when a timer feed really finished ("Finished earlier"); default now */
-  const save = async (fromTimer = false, endAt?: string) => {
+  /** endAt: when a timer feed really finished ("Finished earlier"); default now.
+   *  next: start a new timer on this side straight after (the timer was left on from an earlier feed). */
+  const save = async (fromTimer = false, endAt?: string, next?: 'left' | 'right') => {
     setErr(null);
     try {
       let row: Partial<FeedingEntry> = { baby_id: baby.baby_id, feeding_type: type, observations: obs, notes: notes.trim() || null };
@@ -93,6 +94,7 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
       // from the timer: saved together with the Stop, so two caregivers stopping it can't save the feed twice
       const id = fromTimer ? stopFeedTimer(baby.baby_id, row, endAt) : upsertEntry('feeds', row);
       if (!id) throw new Error('This timer has already been stopped.');
+      if (next) { startFeedTimer(baby.baby_id, next); toast(`Earlier feed saved. New feed started on the ${next}.`); return; }
       toast(existing ? 'Feed updated' : 'Feed saved', existing ? undefined : { label: 'Undo', run: () => deleteEntry('feeds', id) });
       onDone();
     } catch (e: any) { setErr(e.message); }
@@ -122,12 +124,18 @@ export function LogFeed({ entryId, onKey, onDone }: { entryId?: string; onKey?: 
             </>
           ) : (
             <>
-              <StillCheck kind="feed" id={timer.timer_id} startedAt={timer.started_at} earliestEnd={earliestTimerEnd(timer)} tz={tz} fmt={ctx.prefs.time_format} now={now}
-                onEnded={iso => {
-                  // checked here so the message shows in the card, next to the time that needs changing
+              <NewFeedCheck key={timer.timer_id} timer={timer} startedBy={timerStartedBy(timer)} earliestEnd={earliestTimerEnd(timer)} tz={tz} fmt={ctx.prefs.time_format} now={now}
+                onNewFeed={(iso, next) => {
                   if (feedTimerTotals(timer, Date.parse(iso)).total > MAX_FEED_SECONDS) throw new Error('A feed can be at most 4 hours. Choose an earlier end, or discard the timer and enter the feed by hand.');
-                  save(true, iso);
-                }} />
+                  save(true, iso, next);
+                }}>
+                <StillCheck kind="feed" id={timer.timer_id} startedAt={timer.started_at} earliestEnd={earliestTimerEnd(timer)} tz={tz} fmt={ctx.prefs.time_format} now={now}
+                  onEnded={iso => {
+                    // checked here so the message shows in the card, next to the time that needs changing
+                    if (feedTimerTotals(timer, Date.parse(iso)).total > MAX_FEED_SECONDS) throw new Error('A feed can be at most 4 hours. Choose an earlier end, or discard the timer and enter the feed by hand.');
+                    save(true, iso);
+                  }} />
+              </NewFeedCheck>
               <div className="timer-big" aria-live="off">{formatClock(totals!.total)}</div>
               <div className="muted small">{timer.segment_started_at ? 'Running' : 'Paused'}{timer.side ? ` · ${timer.side} side` : ''}{totals!.left + totals!.right > 0 ? ` · L ${formatClock(totals!.left)} · R ${formatClock(totals!.right)}` : ''}</div>
               {timerStartedBy(timer) && <div className="muted small">Started by {timerStartedBy(timer)} · {formatTime(timer.started_at, tz, ctx.prefs.time_format)}</div>}
