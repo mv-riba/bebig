@@ -8,7 +8,7 @@
 //   hadn't seen it yet.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
-import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, applyTimerResult, pruneFinishedTimers, type Table, type OutboxOp, type SleepResult, type TimerResult } from './store';
+import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, applyTimerResult, pruneFinishedTimers, setSyncPhase, getSyncPhase, isStale, UPDATE_TIMEOUT_MS, type Table, type OutboxOp, type SleepResult, type TimerResult } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
 
@@ -188,24 +188,31 @@ const tableErrors: Partial<Record<Table, string>> = {};
 async function pull() {
   if (!auth || !navigator.onLine) return;
   const me = auth.user.id;
-  const profiles = await rest('GET', 'profiles?select=user_id,email,display_name,created_at,updated_at') as User[];
-  const results: Partial<Record<Table, any[]>> = {};
-  for (const t of Object.keys(REMOTE) as Table[]) {
+  // All tables at once: one after another took several seconds on a phone, during which Home showed old data.
+  const fetchTable = async (t: Table): Promise<any[] | undefined> => {
     const since = cursors[t] ? `&server_updated_at=gt.${encodeURIComponent(new Date(new Date(cursors[t]).getTime() - 5 * 60000).toISOString())}` : '';
-    let rows: any[];
-    try { rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[]; }
+    try { const rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[]; delete tableErrors[t]; return rows; }
     catch (e: any) {
       // one table failing (e.g. a database update not applied yet) must not stop everything else syncing
       if (e.status === 401 || !navigator.onLine) throw e;
-      if (t === 'timers' && e.status === 404) continue; // migration 0008 not applied yet: timers stay on each device
-      tableErrors[t] = e.message; continue;
+      if (t === 'timers' && e.status === 404) return undefined; // migration 0008 not applied yet: timers stay on each device
+      tableErrors[t] = e.message; return undefined;
     }
-    delete tableErrors[t];
+  };
+  const tables = Object.keys(REMOTE) as Table[];
+  const [profiles, visibleRows, ...rowsByTable] = await Promise.all([
+    rest('GET', 'profiles?select=user_id,email,display_name,created_at,updated_at') as Promise<User[]>,
+    // full id list of babies we can see (detect revoked access / deleted babies)
+    rest('GET', 'baby_profiles?select=baby_id') as Promise<any[]>,
+    ...tables.map(fetchTable),
+  ]);
+  const results: Partial<Record<Table, any[]>> = {};
+  tables.forEach((t, i) => {
+    const rows = rowsByTable[i]; if (!rows) return;
     results[t] = rows;
     if (rows.length) cursors[t] = rows[rows.length - 1].server_updated_at;
-  }
-  // full id list of babies we can see (detect revoked access / deleted babies)
-  const visible = new Set(((await rest('GET', 'baby_profiles?select=baby_id')) as any[]).map(r => r.baby_id));
+  });
+  const visible = new Set(visibleRows.map(r => r.baby_id));
   localStorage.setItem(cursorKey, JSON.stringify(cursors));
   setState(s => {
     for (const p of profiles) s.users[p.user_id] = { ...s.users[p.user_id], ...p };
@@ -293,13 +300,38 @@ function repairLocalOnlyBabies() {
     if (target) mergeBabyInto(b.baby_id, target.baby_id); else requeueBaby(b.baby_id);
   }
 }
-async function cycle() {
+// One sync at a time. Opening the app used to start two or three full syncs at once (screen shown again, live-update
+// connection, 15-s timer), which made catching up slower. A request made while one runs is done once right after it.
+let running: Promise<void> | null = null; let again = false;
+let updateTimer: any = null;
+function cycle(): Promise<void> {
+  if (running) { again = true; return running; }
+  running = (async () => {
+    do { again = false; await cycleOnce(); } while (again);
+  })().finally(() => { running = null; });
+  return running;
+}
+async function cycleOnce() {
+  // This phone's copy is old (it missed at least one regular check, e.g. the app was closed): show "Updating…" on Home
+  // until this sync is done, and "Couldn't update" if it takes longer than UPDATE_TIMEOUT_MS.
+  const stale = !!auth && navigator.onLine && isStale();
+  if (stale && getSyncPhase() === 'idle') {
+    setSyncPhase('updating');
+    clearTimeout(updateTimer);
+    updateTimer = setTimeout(() => { if (getSyncPhase() === 'updating') setSyncPhase('failed'); }, UPDATE_TIMEOUT_MS);
+  }
+  let pulled = false;
   try {
-    await push(); await pull(); repairLocalOnlyBabies(); setInitialPullDone(true); await push(); await refreshPlus();
+    await push(); pulled = !!auth && navigator.onLine; await pull(); repairLocalOnlyBabies(); setInitialPullDone(true); await push(); await refreshPlus();
     const te = Object.entries(tableErrors);
     syncError = te.length ? `Some data couldn’t sync (${te.map(([t]) => t).join(', ')}): ${te[0][1]}` : null;
+    if (pulled) { clearTimeout(updateTimer); setSyncPhase('idle'); }
   }
-  catch (e: any) { console.warn('sync', e); syncError = navigator.onLine ? (e?.message || 'Sync failed') : 'Offline'; if (!navigator.onLine) setInitialPullDone(true); }
+  catch (e: any) {
+    console.warn('sync', e); syncError = navigator.onLine ? (e?.message || 'Sync failed') : 'Offline'; if (!navigator.onLine) setInitialPullDone(true);
+    if (getSyncPhase() === 'updating') { clearTimeout(updateTimer); setSyncPhase('failed'); }
+  }
+  if (!navigator.onLine && getSyncPhase() !== 'idle') { clearTimeout(updateTimer); setSyncPhase('idle'); } // offline has its own banner
   setState(() => {}, false);
 }
 export const syncNow = () => cycle();

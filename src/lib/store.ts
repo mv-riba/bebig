@@ -829,6 +829,33 @@ export function requireReauth(message: string) {
 }
 export const unsyncedCount = (s: State = state) => s.outbox.length + (s.syncFailed?.length ?? 0);
 
+// ---------------- Sync status shown on Home (not persisted) ----------------
+// 'updating': this phone's copy is more than STALE_MS old and a sync is under way — Home fades the cards and holds the
+// sleep timer until it finishes. 'failed': that sync didn't finish within UPDATE_TIMEOUT_MS (or failed). 'idle': fresh.
+export const STALE_MS = 20_000; // the app syncs every 15 s while open, so older than this means at least one check was missed
+export const UPDATE_TIMEOUT_MS = 8_000;
+export type SyncPhase = 'idle' | 'updating' | 'failed';
+let syncPhase: SyncPhase = 'idle';
+export function setSyncPhase(p: SyncPhase) { if (syncPhase !== p) { syncPhase = p; emit(); } }
+export const getSyncPhase = () => syncPhase;
+export const useSyncPhase = () => useSyncExternalStore(subscribe, getSyncPhase, getSyncPhase);
+export const isStale = (s: State = state, now = Date.now()) => !s.lastSyncedAt || now - new Date(s.lastSyncedAt).getTime() > STALE_MS;
+
+/** Entries on this phone the server doesn't have yet: `waiting` (in the outbox) and `failed` (refused, kept for retry),
+ *  keyed by entry id, with when each was queued. A finished feed or extras timer counts for the entry it saves. */
+export function unsyncedEntries(s: State = state) {
+  const waiting = new Map<string, number>(); const failed = new Set<string>();
+  const ids = (o: OutboxOp) => {
+    const out: string[] = [];
+    if (o.table === 'timers') { if (o.action && (o.action as any).entry_id) out.push((o.action as any).entry_id); }
+    else { const f = (idField as Record<string, string>)[o.table]; const id = f && o.row?.[f]; if (id) out.push(id); }
+    return out;
+  };
+  for (const o of s.outbox) for (const id of ids(o)) { const t = new Date(o.queued_at).getTime(); waiting.set(id, Math.min(waiting.get(id) ?? t, t)); }
+  for (const o of s.syncFailed || []) for (const id of ids(o)) failed.add(id);
+  return { waiting, failed };
+}
+
 // ---------------- Timers for "How long" extra trackers (shared, see above) ----------------
 export type ExtraTimer = RunningTimer;
 export function extraTimerSeconds(t: RunningTimer, now = Date.now()) {
@@ -905,4 +932,14 @@ export function requeueBaby(baby_id: string) {
     for (const tb of ['trackers', ...ENTRY_TABLES] as const) for (const r of Object.values(s[tb] as Record<string, any>)) if (r.baby_id === baby_id) queue(s, tb, r);
     orderOutbox(s);
   });
+}
+
+/** First names of the other people who follow this baby ("Cristian", "Cristian and Anna"), for sync messages. */
+export function otherCaregiverNames(baby_id: string, s: State = state): string {
+  const me = currentUserId();
+  const names = Object.values(s.access)
+    .filter(a => a.baby_id === baby_id && a.invitation_status === 'accepted' && a.user_id && a.user_id !== me)
+    .map(a => s.users[a.user_id!]?.display_name?.trim().split(/\s+/)[0]).filter(Boolean) as string[];
+  const u = [...new Set(names)];
+  return u.length <= 1 ? (u[0] ?? '') : `${u.slice(0, -1).join(', ')} and ${u[u.length - 1]}`;
 }

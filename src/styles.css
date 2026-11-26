@@ -378,3 +378,14 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .still-card { border: 1px solid var(--plus, #e0b25a); margin-bottom: 12px; text-align: left; }
 .still-card h3 { margin: 0 0 4px; }
 .still-card .btn-row { margin-top: 10px; }
+
+/* Sync states (Home): "Updating…" after the app was away, offline and refused entries */
+.sync-badge.busy { background: var(--accent-l); color: var(--accent-d); }
+.spinner { width: 11px; height: 11px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.sync-note { font-size: .8rem; color: var(--ink-2); background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: -4px 0 12px; }
+.sync-note.offline { background: var(--peach-l); border-color: transparent; color: #7A4C2E; }
+.summary.is-stale .sum-card { opacity: .55; transition: opacity .2s; }
+.tl-sync { display: inline-block; margin-top: 2px; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; color: #7A4C2E; background: var(--peach-l); align-self: flex-start; }
+.tl-sync.failed { color: #8A2E1E; background: #F7DCD6; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
