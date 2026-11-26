@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useStore, currentUserId, selectedBaby, isRemote, isInitialPullDone, onNotice } from './lib/store';
 import { Logo } from './screens/Auth';
 import { NavCtx, Tab, Route } from './ui/nav';
@@ -34,13 +34,18 @@ function Shell() {
   useReminders();
 
   // Integrate with browser/Android back button
+  // pops we started ourselves: the screen is already closed, so their popstate is skipped
+  const ownPops = useRef(0);
   useEffect(() => {
-    const onPop = () => setStack(s => s.slice(0, -1));
+    const onPop = () => { if (ownPops.current > 0) { ownPops.current--; return; } setStack(s => s.slice(0, -1)); };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const push = useCallback((r: Route) => { history.pushState({ r: true }, ''); setStack(s => [...s, r]); window.scrollTo(0, 0); }, []);
-  const pop = useCallback(() => { history.back(); }, []);
+  // Close the screen in the same render as the save or stop that called this. history.back() is asynchronous, so
+  // waiting for its popstate showed the screen's next state for a moment (e.g. a stopped sleep timer flashed the
+  // Edit Sleep form, a stopped feed or extras timer flashed the manual form with its Save button).
+  const pop = useCallback(() => { ownPops.current++; setStack(s => s.slice(0, -1)); history.back(); }, []);
   const setTab = useCallback((t: Tab) => { setTabState(t); history.replaceState(history.state, '', '#tab-' + t); window.scrollTo(0, 0); }, []);
   const openDay = useCallback((k: string) => { setCalendarKey(k); setTab('calendar'); }, [setTab]);
 
