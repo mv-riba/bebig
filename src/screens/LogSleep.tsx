@@ -8,6 +8,7 @@ import { toLocalInput, fromLocalInput, formatClock, formatTime, formatDuration, 
 import type { SleepEntry } from '../lib/types';
 import { defaultTime } from './LogFeed';
 import { StillCheck } from '../ui/still';
+import { useNav, TAB_LABEL } from '../ui/nav';
 
 function Ring({ fraction, children }: { fraction: number; children: React.ReactNode }) {
   const r = 96, c = 2 * Math.PI * r;
@@ -23,7 +24,7 @@ function Ring({ fraction, children }: { fraction: number; children: React.ReactN
 }
 
 export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const now = useNow(1000); const confirm = useConfirm();
   const existing: SleepEntry | undefined = entryId ? getState().sleeps[entryId] : undefined;
   const tz = ctx?.baby.timezone ?? 'UTC';
   const [mode, setMode] = useState<'timer' | 'manual'>(existing || onKey ? 'manual' : 'timer');
@@ -97,8 +98,10 @@ export function LogSleep({ entryId, onKey, onDone }: { entryId?: string; onKey?:
     );
   };
 
+  // A running timer isn't cancelled by leaving it, so it gets "‹ Home" (where Back goes) instead of Cancel
+  const running = !!active && !replacing && ((mode === 'timer' && !existing) || !!editingActive);
   return (
-    <Page title={existing ? 'Edit Sleep' : 'Add Sleep'} onCancel={onDone} className="form-page"
+    <Page title={running ? 'Sleep' : existing ? 'Edit Sleep' : 'Add Sleep'} onCancel={running ? undefined : onDone} onBack={running ? onDone : undefined} backLabel={TAB_LABEL[nav.tab]} className="form-page"
       right={existing && !editingActive ? <button className="icon-btn danger" aria-label="Delete sleep" onClick={() => { deleteEntry('sleeps', existing.sleep_id); toast('Sleep deleted', { label: 'Undo', run: () => restoreEntry('sleeps', existing.sleep_id) }); onDone(); }}><ITrash /></button> : null}>
       {!existing && <Segmented size="lg" label="Logging method" value={mode} onChange={setMode} options={[{ value: 'timer', label: 'Timer', icon: <ITimer size={26} /> }, { value: 'manual', label: 'Manual', icon: <ICalendar size={26} /> }]} />}
       {((mode === 'timer' && !existing) || editingActive) && !replacing ? timerView() : (

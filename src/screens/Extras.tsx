@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, Row } from '../ui/ui';
 import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash, ICrown } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
-import { useNav } from '../ui/nav';
+import { useNav, TAB_LABEL } from '../ui/nav';
 import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore, startExtraTimer, pauseExtraTimer, resumeExtraTimer, stopExtraTimer, discardExtraTimer, extraTimerSeconds, extraTimersOf, timerStartedBy, live, currentUserId } from '../lib/store';
 import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { IPlay, IPause, IStop } from '../ui/icons';
@@ -118,7 +118,7 @@ export function TrackerEditor({ id, onDone }: { id?: string; onDone: () => void 
 
 // ---------------- Log / edit an extra entry ----------------
 export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: string; entryId?: string; onKey?: string; onDone: () => void }) {
-  const ctx = useBaby(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000); const canX = useCanExtras();
+  const ctx = useBaby(); const nav = useNav(); const toast = useToast(); const confirm = useConfirm(); const now = useNow(1000); const canX = useCanExtras();
   const timer = useStore(s => extraTimersOf(s)[trackerId ?? ''] ?? null);
   const ex: ExtraEntry | undefined = entryId ? getState().extras[entryId] : undefined;
   const t: TrackerDef | undefined = getState().trackers[ex?.tracker_id ?? trackerId ?? ''];
@@ -179,7 +179,7 @@ export function ExtraForm({ trackerId, entryId, onKey, onDone }: { trackerId?: s
     </div>
   );
   return (
-    <Page title={ex ? `Edit ${t.name}` : t.name} onCancel={onDone} className="form-page"
+    <Page title={ex ? `Edit ${t.name}` : t.name} onCancel={timer && !ex ? undefined : onDone} onBack={timer && !ex ? onDone : undefined} backLabel={TAB_LABEL[nav.tab]} className="form-page"
       right={ex ? <button className="icon-btn danger" aria-label="Delete entry" onClick={() => { deleteEntry('extras', ex.extra_id); toast('Entry deleted', { label: 'Undo', run: () => restoreEntry('extras', ex.extra_id) }); onDone(); }}><ITrash /></button> : null}>
       {timerView}
       {!timer && <>

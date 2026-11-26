@@ -40,13 +40,16 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 // ---------- Page shells ----------
-export function Page({ title, onBack, onCancel, right, children, className = '' }: { title: string; onBack?: () => void; onCancel?: () => void; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
+/** `backLabel` names where Back goes (e.g. "Home" on a running timer), shown next to the same Back arrow as elsewhere. */
+export function Page({ title, onBack, backLabel, onCancel, right, children, className = '' }: { title: string; onBack?: () => void; backLabel?: string; onCancel?: () => void; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <div className={`page ${className}`}>
       <header className="page-head">
         <div className="page-head-l">
           {onCancel && <button className="link" onClick={onCancel}>Cancel</button>}
-          {onBack && <button className="icon-btn" onClick={onBack} aria-label="Back"><IBack /></button>}
+          {onBack && (backLabel
+            ? <button className="link back-link" onClick={onBack}><IBack size={20} />{backLabel}</button>
+            : <button className="icon-btn" onClick={onBack} aria-label="Back"><IBack /></button>)}
         </div>
         <h1>{title}</h1>
         <div className="page-head-r">{right}</div>
