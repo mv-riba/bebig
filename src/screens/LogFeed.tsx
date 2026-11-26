@@ -9,6 +9,8 @@ import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { toLocalInput, fromLocalInput, formatClock, formatTime, dayStart, zonedParts } from '../lib/time';
 import type { FeedingEntry, FeedingType } from '../lib/types';
 import { MAX_FEED_SECONDS } from '../lib/validate';
+import { overlappingFeeds, mergeFeeds, feedSpan } from '../lib/merge';
+import { askMerge, applyMerge } from '../ui/overlap';
 
 export const OBSERVATIONS = ['Very hungry', 'Hungry', 'Not very hungry', 'Fell asleep during feeding', 'Difficult feeding', 'Other'];
 
@@ -89,8 +91,24 @@ export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string;
           if (end) { const e = fromLocalInput(end, tz); if (new Date(e) <= new Date(s)) throw new Error('End time must be after the start time.'); row.end_datetime = e; } else row.end_datetime = null;
         }
       }
+      // saved over the time of a feed already logged (e.g. a new timer's start moved back before the last one ended):
+      // really one feed, so offer to merge them
+      let askedOverlap = false;
+      if (!fromTimer) {
+        const others = overlappingFeeds({ ...row, feed_id: existing?.feed_id }, live(getState().feeds, baby.baby_id));
+        if (others.length) {
+          const choice = await askMerge(confirm, 'feed', others.map(o => { const [a, b] = feedSpan(o)!; return { start: new Date(a).toISOString(), end: new Date(b).toISOString() }; }), tz, ctx.prefs.time_format);
+          if (choice === 'cancel') return;
+          if (choice === 'merge') {
+            const undo = applyMerge('feeds', others, existing?.feed_id, { ...mergeFeeds([...others, row]), baby_id: baby.baby_id });
+            toast('Feeds merged into one', { label: 'Undo', run: undo });
+            onDone(); return;
+          }
+          askedOverlap = true;
+        }
+      }
       // another caregiver (or you) may have logged this feed already, e.g. both phones at once or one offline
-      if (!fromTimer && !existing) {
+      if (!fromTimer && !existing && !askedOverlap) {
         const s = getState(); const like = similarEntry({ kind: 'feed', e: row as FeedingEntry }, live(s.feeds, baby.baby_id).map(e => ({ kind: 'feed' as const, e })), tz);
         if (like && !(await confirm(similarQuestion(like, `a ${row.feeding_type === 'breast' ? 'breastfeed' : row.feeding_type === 'formula' ? 'formula feed' : 'feed of expressed milk'}`, formatTime((like.e as FeedingEntry).start_datetime, tz, s.prefs[currentUserId() ?? '']?.time_format), s.users, currentUserId())))) return;
       }

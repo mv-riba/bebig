@@ -9,6 +9,8 @@ import type { SleepEntry } from '../lib/types';
 import { defaultTime } from './LogFeed';
 import { StillCheck } from '../ui/still';
 import { useNav, TAB_LABEL } from '../ui/nav';
+import { overlappingSleeps, mergeSleeps } from '../lib/merge';
+import { askMerge, applyMerge } from '../ui/overlap';
 
 function Ring({ fraction, children }: { fraction: number; children: React.ReactNode }) {
   const r = 96, c = 2 * Math.PI * r;
@@ -51,9 +53,22 @@ export function LogSleep({ entryId, draftId, onKey, onDone }: { entryId?: string
     if (new Date(e) <= new Date(s)) return setErr('End time must be after the start time.');
     if (new Date(e).getTime() > Date.now() + 5 * 60000) return setErr('End time can’t be in the future. Use the timer for an ongoing sleep.');
     if (new Date(e).getTime() - new Date(s).getTime() > 16 * 3600000) return setErr('That’s longer than 16 hours — please check the times.');
-    const overlap = live(getState().sleeps, baby.baby_id).find(x => x.sleep_id !== existing?.sleep_id && x.sleep_id !== replacing?.sleep_id && x.end_datetime && new Date(x.start_datetime) < new Date(e) && new Date(x.end_datetime) > new Date(s));
-    if (overlap && !(await confirm({ title: 'Overlapping sleep', text: `This overlaps another sleep (${formatTime(overlap.start_datetime, tz, prefs.time_format)}–${formatTime(overlap.end_datetime!, tz, prefs.time_format)}). Save anyway?`, ok: 'Save anyway' }))) return;
     const pauses = existing?.status === 'completed' ? (existing.pauses || []).filter(p => p.end && new Date(p.start) >= new Date(s) && new Date(p.end) <= new Date(e)) : [];
+    // saved over the time of a sleep already logged (e.g. a new sleep's start moved back before the last one ended):
+    // really one sleep, so offer to merge them
+    const others = overlappingSleeps({ sleep_id: existing?.sleep_id, start_datetime: s, end_datetime: e }, live(getState().sleeps, baby.baby_id), replacing?.sleep_id);
+    if (others.length) {
+      const choice = await askMerge(confirm, 'sleep', others.map(o => ({ start: o.start_datetime, end: o.end_datetime! })), tz, prefs.time_format);
+      if (choice === 'cancel') return;
+      if (choice === 'merge') {
+        let merged;
+        try { merged = mergeSleeps([...others, { start_datetime: s, end_datetime: e, pauses, notes: notes.trim() || null }]); } catch (x: any) { return setErr(x.message); }
+        const undo = applyMerge('sleeps', others, existing && !replacing ? existing.sleep_id : undefined, { ...merged, baby_id: baby.baby_id });
+        if (replacing) discardSleep(replacing);
+        toast('Sleeps merged into one', { label: 'Undo', run: undo });
+        onDone(); return;
+      }
+    }
     const row: Partial<SleepEntry> = { ...(existing && !replacing ? { sleep_id: existing.sleep_id } : {}), baby_id: baby.baby_id, start_datetime: s, end_datetime: e, status: 'completed', pauses, notes: notes.trim() || null };
     row.duration_seconds = Math.round(sleepElapsed(row as SleepEntry));
     const id = upsertEntry('sleeps', row);

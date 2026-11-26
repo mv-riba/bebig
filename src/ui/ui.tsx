@@ -139,21 +139,24 @@ export function Wave({ tone = 'sage' }: { tone?: 'sage' | 'peach' | 'lav' }) {
 
 
 // ---------- In-app confirmation dialog (replaces window.confirm/prompt; works in installed PWAs & embedded frames) ----------
-interface ConfirmOpts { title: string; text?: string; ok?: string; cancel?: string; danger?: boolean; typeWord?: string }
-const ConfirmCtx = createContext<(o: ConfirmOpts) => Promise<boolean>>(async () => false);
+/** alt: a third choice between Cancel and OK (e.g. "Keep both"); choosing it resolves to 'alt'. */
+interface ConfirmOpts { title: string; text?: string; ok?: string; cancel?: string; danger?: boolean; typeWord?: string; alt?: string }
+type Answer = boolean | 'alt';
+const ConfirmCtx = createContext<(o: ConfirmOpts) => Promise<Answer>>(async () => false);
 export const useConfirm = () => useContext(ConfirmCtx);
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
-  const [st, setSt] = useState<(ConfirmOpts & { resolve: (v: boolean) => void }) | null>(null);
+  const [st, setSt] = useState<(ConfirmOpts & { resolve: (v: Answer) => void }) | null>(null);
   const [typed, setTyped] = useState('');
-  const ask = useCallback((o: ConfirmOpts) => new Promise<boolean>(resolve => { setTyped(''); setSt({ ...o, resolve }); }), []);
-  const close = (v: boolean) => { st?.resolve(v); setSt(null); };
+  const ask = useCallback((o: ConfirmOpts) => new Promise<Answer>(resolve => { setTyped(''); setSt({ ...o, resolve }); }), []);
+  const close = (v: Answer) => { st?.resolve(v); setSt(null); };
   return (
     <ConfirmCtx.Provider value={ask}>
       {children}
       <Sheet open={!!st} onClose={() => close(false)} title={st?.title ?? ''}>
         {st?.text && <p className="muted">{st.text}</p>}
         {st?.typeWord && <Field label={`Type ${st.typeWord} to confirm`}><input autoFocus value={typed} onChange={e => setTyped(e.target.value)} /></Field>}
-        <div className="btn-row" style={{ marginTop: 16 }}>
+        {st?.alt && <button className="btn soft block" style={{ marginTop: 16 }} onClick={() => close('alt')}>{st.alt}</button>}
+        <div className="btn-row" style={{ marginTop: st?.alt ? 8 : 16 }}>
           <button className="btn soft" onClick={() => close(false)}>{st?.cancel ?? 'Cancel'}</button>
           <button className={`btn ${st?.danger ? 'danger' : 'primary'}`} disabled={!!st?.typeWord && typed.trim() !== st.typeWord} onClick={() => close(true)}>{st?.ok ?? 'Confirm'}</button>
         </div>
