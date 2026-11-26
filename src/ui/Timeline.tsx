@@ -7,7 +7,14 @@ import { colourLabel } from '../screens/LogPoo';
 import { IBreast, IBottle, IFormula, IPoo, IMoon, IDrop } from './icons';
 import { describeExtra } from '../lib/extras';
 import { TrackerIconSvg } from '../screens/Extras';
-import { useStore } from '../lib/store';
+import { useStore, unsyncedEntries, otherCaregiverNames, retryFailedSync } from '../lib/store';
+import { useOnline } from './SyncBadge';
+import { useConfirm } from './ui';
+import { syncMode, syncNow } from '../lib/sync';
+
+/** An entry still on its way to the server counts as waiting once it's been queued this long (or straight away
+ *  when offline), so the tag doesn't flash on every entry logged with a good connection. */
+const WAITING_TAG_AFTER_MS = 10_000;
 
 export type TItem = { kind: 'feed'; at: string; e: FeedingEntry } | { kind: 'poo'; at: string; e: PooEntry } | { kind: 'sleep'; at: string; e: SleepEntry } | { kind: 'extra'; at: string; e: ExtraEntry; t?: TrackerDef };
 export const itemId = (i: TItem) => (i.e as any)[i.kind === 'feed' ? 'feed_id' : i.kind === 'poo' ? 'poo_id' : i.kind === 'sleep' ? 'sleep_id' : 'extra_id'] as string;
@@ -66,15 +73,29 @@ export const KIND_ICON = (item: TItem, size = 18) =>
 export function Timeline({ items, tz, fmt, onOpen, now }: { items: TItem[]; tz: string; fmt: TimeFormat; onOpen: (i: TItem) => void; now: number }) {
   const users = useStore(s => s.users);
   const dups = possibleDuplicates(items as any, tz);
+  const unsynced = useStore(s => unsyncedEntries(s)); const online = useOnline(); const confirm = useConfirm();
+  const remote = syncMode() === 'remote';
+  const syncTag = (i: TItem): 'failed' | 'waiting' | null => {
+    if (!remote) return null; const id = itemId(i);
+    if (unsynced.failed.has(id)) return 'failed';
+    const q = unsynced.waiting.get(id);
+    return q != null && (!online || now - q > WAITING_TAG_AFTER_MS) ? 'waiting' : null;
+  };
+  const tap = async (i: TItem) => {
+    if (syncTag(i) !== 'failed') return onOpen(i);
+    const others = otherCaregiverNames(i.e.baby_id);
+    if (await confirm({ title: 'This entry didn’t sync', text: `It’s safe on this phone, but ${others || 'your other devices'} can’t see it yet. Bebig tries again every few minutes.`, ok: 'Try again', cancel: 'Close' })) { retryFailedSync(); syncNow(); }
+  };
   return (
     <ol className="timeline">
       {items.map(item => {
         const d = describe(item, tz, fmt, now);
         const notes = [...(item.kind === 'feed' ? item.e.observations : []), item.e.notes].filter(Boolean).join(' · ');
+        const tag = syncTag(item);
         const by = (item.e.created_by && users[item.e.created_by]?.display_name) || 'Former caregiver';
         return (
           <li key={item.kind + itemId(item)}>
-            <button className={`tl-item tl-${item.kind} ${isMinor(item) ? 'tl-minor' : ''} ${item.kind === 'poo' && item.e.nappy_type === 'wet' ? 'tl-wet' : ''}`} onClick={() => onOpen(item)} aria-label={`${d.title} at ${d.time}${d.sub ? ', ' + d.sub : ''}${dups.has(itemId(item)) ? '. Possible duplicate' : ''}. Tap to edit`}>
+            <button className={`tl-item tl-${item.kind} ${isMinor(item) ? 'tl-minor' : ''} ${item.kind === 'poo' && item.e.nappy_type === 'wet' ? 'tl-wet' : ''}`} onClick={() => tap(item)} aria-label={`${d.title} at ${d.time}${d.sub ? ', ' + d.sub : ''}${dups.has(itemId(item)) ? '. Possible duplicate' : ''}${tag === 'failed' ? '. Not synced. Tap for details' : `${tag === 'waiting' ? '. Waiting to sync' : ''}. Tap to edit`}`}>
               <span className="tl-dot">{KIND_ICON(item, 16)}</span>
               <span className="tl-time">{d.time}</span>
               <span className="tl-main">
@@ -82,6 +103,8 @@ export function Timeline({ items, tz, fmt, onOpen, now }: { items: TItem[]; tz: 
                 {d.sub && <span className="tl-sub">{d.sub}</span>}
                 {notes && <span className="tl-note">“{notes}”</span>}
                 {dups.has(itemId(item)) && <span className="tl-dup">Possible duplicate · tap to check</span>}
+                {tag === 'waiting' && <span className="tl-sync">Waiting to sync</span>}
+                {tag === 'failed' && <span className="tl-sync failed">Not synced · tap</span>}
               </span>
               {by && <span className="tl-by" title={`Logged by ${by}`}>{by[0].toUpperCase()}</span>}
             </button>

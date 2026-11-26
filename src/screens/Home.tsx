@@ -10,8 +10,9 @@ import { BabySwitcher, OtherBabiesTimers } from '../ui/babies';
 import { lastFeed, lastPoo, lastCompletedSleep, dayStats } from '../lib/calc';
 import { buildInsights, EVIDENCE_LABEL } from '../lib/insights';
 import { formatTime, formatAgo, todayKey, formatDateKey, formatDuration, zonedParts, describeAge, daysBetween, tzGapNote, tzName, guessTimezone } from '../lib/time';
-import { sleepElapsed, sleepTimerTooLong, feedTimerTotals, useStore, currentUserId, roleFor, updateBaby } from '../lib/store';
-import { SyncBadge } from '../ui/SyncBadge';
+import { sleepElapsed, sleepTimerTooLong, feedTimerTotals, useStore, currentUserId, roleFor, updateBaby, useSyncPhase, isStale, unsyncedEntries, otherCaregiverNames } from '../lib/store';
+import { SyncBadge, useOnline } from '../ui/SyncBadge';
+import { syncMode, syncNow } from '../lib/sync';
 import type { BabyProfile } from '../lib/types';
 import { stillDue } from '../lib/still';
 
@@ -24,6 +25,11 @@ export function Home() {
   const ctx = useBaby(); const nav = useNav(); const now = useNow(10000);
   const [more, setMore] = useState(false); const [switching, setSwitching] = useState(false);
   const me = useStore(s => s.users[currentUserId() ?? '']);
+  const phase = useSyncPhase(); const online = useOnline();
+  const lastSynced = useStore(s => s.lastSyncedAt);
+  const outboxCount = useStore(s => s.outbox.length);
+  const waitingCount = useStore(s => unsyncedEntries(s).waiting.size);
+  const accessKey = useStore(s => s.access); const usersKey = useStore(s => s.users);
   const insight = useMemo(() => ctx ? buildInsights(ctx.data, ctx.prefs.time_format, now) : null, [ctx, Math.floor(now / 60000)]);
   if (!ctx) return null;
   const { baby, data, prefs, active, feedTimer } = ctx; const tz = baby.timezone; const fmt = prefs.time_format;
@@ -39,6 +45,17 @@ export function Home() {
   const hasExtras = nappy || ctx.trackers.length > 0;
   const topInsight = insight?.observations[0];
   const tzNote = tzGapNote(tz, new Date(now));
+  // Sync state: while catching up (or after a failed catch-up) the cards are this phone's old copy, so they're faded
+  // and a running timer isn't shown as live. Offline with an old copy: running timers say "as of" the last sync.
+  const remote = syncMode() === 'remote';
+  const updating = remote && online && phase === 'updating';
+  const couldNot = remote && online && phase === 'failed';
+  const offlineOld = remote && !online && isStale(undefined, now);
+  const unsure = updating || couldNot || offlineOld;
+  const asOf = lastSynced ? `as of ${formatTime(lastSynced, tz, fmt)}` : 'not synced yet';
+  const unsureSub = updating ? 'checking…' : asOf;
+  const others = useMemo(() => otherCaregiverNames(baby.baby_id), [baby.baby_id, accessKey, usersKey]);
+  const pendingN = waitingCount || outboxCount; const pendingNoun = waitingCount ? (pendingN === 1 ? 'entry is' : 'entries are') : (pendingN === 1 ? 'change is' : 'changes are');
 
   return (
     <div className="screen home">
@@ -53,12 +70,15 @@ export function Home() {
         <BabySwitcher open={switching} onClose={() => setSwitching(false)} />
         <SyncBadge />
       </header>
+      {updating && lastSynced && <p className="sync-note" role="status">Getting the latest{others ? ` from ${others}’s phone` : ''}… Last updated {formatAgo(lastSynced, now)}.</p>}
+      {couldNot && <p className="sync-note" role="status">Couldn’t get the latest. Showing what this phone had {lastSynced ? `at ${formatTime(lastSynced, tz, fmt)}` : 'before'}. <button className="link small" onClick={() => { syncNow(); }}>Try again</button></p>}
+      {remote && !online && pendingN > 0 && <p className="sync-note offline" role="status">You’re offline. {pendingN} {pendingNoun} saved on this phone and will sync when you’re back online.{others ? ` ${others} won’t see ${pendingN === 1 ? 'it' : 'them'} until then.` : ''}</p>}
 
-      <section className="summary" aria-label="Last activity">
+      <section className={`summary ${updating || couldNot ? 'is-stale' : ''}`} aria-label="Last activity" aria-busy={updating}>
         <button className={`sum-card sum-feed ${feedTimer ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'feed' })} aria-label={feedTimer ? `Breastfeeding timer ${feedTimer.segment_started_at ? 'running' : 'paused'} since ${formatTime(feedTimer.started_at, tz, fmt)}. Open timer` : lf ? `Last feed ${formatTime(lf.start_datetime, tz, fmt)}, ${formatAgo(lf.start_datetime, now)}. Log feed` : 'No feeds yet. Log feed'}>
           <span className="sum-ic">{feedTimer || lf?.feeding_type === 'breast' ? <IBreast size={30} /> : <IBottle size={30} />}</span>
-          <span className="sum-label">{feedTimer ? <>{feedTimer.segment_started_at && <span className="pulse" aria-hidden="true" />} {feedTimer.segment_started_at ? 'Feeding' : 'Feed paused'}</> : 'Feed'}</span>
-          {feedTimer ? <><span className="sum-time">{formatDuration(feedTimerTotals(feedTimer, now).total, true)}</span><span className="sum-ago">{stillDue('feed', feedTimer.timer_id, feedTimer.started_at, now) ? 'Still feeding?' : `since ${formatTime(feedTimer.started_at, tz, fmt)}`}</span></>
+          <span className="sum-label">{feedTimer ? (unsure ? 'Feeding?' : <>{feedTimer.segment_started_at && <span className="pulse" aria-hidden="true" />} {feedTimer.segment_started_at ? 'Feeding' : 'Feed paused'}</>) : 'Feed'}</span>
+          {feedTimer ? <><span className="sum-time">{formatDuration(feedTimerTotals(feedTimer, now).total, true)}</span><span className="sum-ago">{unsure ? unsureSub : stillDue('feed', feedTimer.timer_id, feedTimer.started_at, now) ? 'Still feeding?' : `since ${formatTime(feedTimer.started_at, tz, fmt)}`}</span></>
             : lf ? <><span className="sum-time">{formatTime(lf.start_datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lf.start_datetime, now)})</span></> : <span className="sum-ago">No feeds yet</span>}
         </button>
         <button className="sum-card sum-poo" onClick={() => nav.push({ name: 'poo' })} aria-label={lp ? `Last ${nappy ? 'nappy' : 'poo'} ${formatTime(lp.datetime, tz, fmt)}, ${formatAgo(lp.datetime, now)}. Log ${nappy ? 'nappy' : 'poo'}` : `No ${nappy ? 'nappies' : 'poos'} yet. Log ${nappy ? 'nappy' : 'poo'}`}>
@@ -67,10 +87,10 @@ export function Home() {
           {lp ? <><span className="sum-time">{formatTime(lp.datetime, tz, fmt)}</span><span className="sum-ago">({formatAgo(lp.datetime, now)})</span></> : <span className="sum-ago">{nappy ? 'No poo yet' : 'None yet'}</span>}
           {nappy && <span className="sum-ago sum-wet">{stats.wetCount} wet today</span>}
         </button>
-        <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended at ${formatTime(ls.end_datetime!, tz, fmt)}, awake ${formatAgo(ls.end_datetime!, now).replace(' ago', '')}. Log sleep` : 'No sleep yet. Log sleep'}>
+        <button className={`sum-card sum-sleep ${active ? 'is-active' : ''}`} disabled={updating} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })} aria-label={updating ? 'Sleep: checking for updates from other phones' : active ? `Sleeping since ${formatTime(active.start_datetime, tz, fmt)}` : ls ? `Last sleep ended at ${formatTime(ls.end_datetime!, tz, fmt)}, awake ${formatAgo(ls.end_datetime!, now).replace(' ago', '')}. Log sleep` : 'No sleep yet. Log sleep'}>
           <span className="sum-ic"><IMoon size={30} /></span>
-          <span className="sum-label">{active ? <><span className="pulse" aria-hidden="true" /> Sleeping</> : 'Sleep'}</span>
-          {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">{sleepTimerTooLong(active, now) ? 'Over 24 h · tap to fix' : stillDue('sleep', active.sleep_id, active.start_datetime, now) ? 'Still sleeping?' : `since ${formatTime(active.start_datetime, tz, fmt)}`}</span></>
+          <span className="sum-label">{active ? (unsure ? 'Sleeping?' : <><span className="pulse" aria-hidden="true" /> Sleeping</>) : 'Sleep'}</span>
+          {active ? <><span className="sum-time">{formatDuration(sleepElapsed(active, now), true)}</span><span className="sum-ago">{unsure ? unsureSub : sleepTimerTooLong(active, now) ? 'Over 24 h · tap to fix' : stillDue('sleep', active.sleep_id, active.start_datetime, now) ? 'Still sleeping?' : `since ${formatTime(active.start_datetime, tz, fmt)}`}</span></>
             : ls ? <><span className="sum-time">{formatTime(ls.end_datetime!, tz, fmt)}</span><span className="sum-ago">awake {formatAgo(ls.end_datetime!, now).replace(' ago', '')}</span></> : <span className="sum-ago">None yet</span>}
         </button>
       </section>
@@ -78,7 +98,7 @@ export function Home() {
       <section className="quick" aria-label="Quick actions">
         <button className="btn primary" onClick={() => nav.push({ name: 'feed' })}><IPlus size={18} /> Log Feed</button>
         <button className="btn primary" onClick={() => nav.push({ name: 'poo' })}><IPlus size={18} /> {nappy ? 'Log Nappy' : 'Log Poo'}</button>
-        <button className="btn primary" onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })}>{active ? 'Sleep timer' : <><IPlus size={18} /> Log Sleep</>}</button>
+        <button className="btn primary" disabled={updating} onClick={() => nav.push({ name: 'sleep', entryId: active?.sleep_id })}>{active ? 'Sleep timer' : <><IPlus size={18} /> Log Sleep</>}</button>
       </section>
       {hasExtras && <button className="more-pill" onClick={() => setMore(true)}><IPlus size={16} /> Log something else</button>}
       <RunningExtraTimers />
