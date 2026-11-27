@@ -8,6 +8,7 @@
 //   hadn't seen it yet.
 // Row-level security in the database is the source of truth for access control.
 import { config } from './config';
+import { fetchAllPages } from './pull-pages';
 import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, applyTimerResult, pruneFinishedTimers, setSyncPhase, getSyncPhase, isStale, UPDATE_TIMEOUT_MS, type Table, type OutboxOp, type SleepResult, type TimerResult } from './store';
 import type { PlusStatus } from './plans';
 import type { User } from './types';
@@ -185,13 +186,19 @@ async function push() {
 const cursorKey = 'bebig:cursors';
 const cursors: Record<string, string> = (() => { try { return JSON.parse(localStorage.getItem(cursorKey) || '{}'); } catch { return {}; } })();
 const tableErrors: Partial<Record<Table, string>> = {};
-async function pull() {
-  if (!auth || !navigator.onLine) return;
+/** True when every table was read to the end; false when one still has more (the caller syncs again straight away). */
+async function pull(): Promise<boolean> {
+  if (!auth || !navigator.onLine) return true;
   const me = auth.user.id;
+  let complete = true;
   // All tables at once: one after another took several seconds on a phone, during which Home showed old data.
+  // Each table is read in pages (see pull-pages.ts): one request returns at most the project's Max rows.
   const fetchTable = async (t: Table): Promise<any[] | undefined> => {
-    const since = cursors[t] ? `&server_updated_at=gt.${encodeURIComponent(new Date(new Date(cursors[t]).getTime() - 5 * 60000).toISOString())}` : '';
-    try { const rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[]; delete tableErrors[t]; return rows; }
+    try {
+      const r = await fetchAllPages(q => rest('GET', q) as Promise<any[]>, REMOTE[t].table, REMOTE[t].id, cursors[t]);
+      if (!r.complete) complete = false;
+      delete tableErrors[t]; return r.rows;
+    }
     catch (e: any) {
       // one table failing (e.g. a database update not applied yet) must not stop everything else syncing
       if (e.status === 401 || !navigator.onLine) throw e;
@@ -243,8 +250,10 @@ async function pull() {
     // (only babies the server has confirmed before — never a local one that hasn't reached the server yet)
     for (const id of Object.keys(s.babies)) if (!visible.has(id) && !pendingIds.has(id) && (s.babies[id] as any).server_updated_at) forgetBabyLocally(s, id, me);
     pruneFinishedTimers(s);
-    s.lastSyncedAt = new Date().toISOString();
+    // "Up to date" only once every page is in, so a first sync with a long history doesn't show the tick too early
+    if (complete) s.lastSyncedAt = new Date().toISOString();
   }, false);
+  return complete;
 }
 
 // ---------- realtime ----------
@@ -322,7 +331,7 @@ async function cycleOnce() {
   }
   let pulled = false;
   try {
-    await push(); pulled = !!auth && navigator.onLine; await pull(); repairLocalOnlyBabies(); setInitialPullDone(true); await push(); await refreshPlus();
+    await push(); pulled = !!auth && navigator.onLine; const complete = await pull(); if (complete) { repairLocalOnlyBabies(); setInitialPullDone(true); } else { pulled = false; again = true; } await push(); await refreshPlus(); // not complete: more to fetch, so go again before showing "up to date"
     const te = Object.entries(tableErrors);
     syncError = te.length ? `Some data couldn’t sync (${te.map(([t]) => t).join(', ')}): ${te[0][1]}` : null;
     if (pulled) { clearTimeout(updateTimer); setSyncPhase('idle'); }
