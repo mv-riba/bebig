@@ -46,7 +46,9 @@ export function LogPoo({ entryId, draftId, onKey, onDone }: { entryId?: string; 
   const [err, setErr] = useState<string | null>(null);
   if (!ctx) return null;
   const { baby } = ctx;
-  const iso = (() => { try { return fromLocalInput(time, tz); } catch { return new Date().toISOString(); } })();
+  // a cleared or broken time field falls back to now only for the age-based notice; saving asks for a time
+  const parsed = (() => { try { return fromLocalInput(time, tz); } catch { return null; } })();
+  const iso = parsed ?? new Date().toISOString();
   const ageDays = daysBetween(baby.date_of_birth, dateKey(iso, tz));
   const nappy = !!baby.wet_tracking || (seed?.nappy_type != null && seed.nappy_type !== 'poo');
   const wetOnly = nappy && ntype === 'wet';
@@ -55,6 +57,7 @@ export function LogPoo({ entryId, draftId, onKey, onDone }: { entryId?: string; 
 
   const save = async () => {
     setErr(null);
+    if (!parsed) return setErr('Please enter a valid date and time.');
     if (new Date(iso).getTime() > Date.now() + 5 * 60000) return setErr('Time can’t be in the future.');
     if (!existing) {
       const s = getState(); const nt = nappy ? ntype : 'poo';
