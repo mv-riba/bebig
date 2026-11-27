@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Page, Field, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, Row } from '../ui/ui';
+import { Page, Field, NotesField, Segmented, Sheet, Stepper, useToast, useConfirm, useNow, Row } from '../ui/ui';
 import { IChevron, IPlus, ICheck, IDrop, IInfo, ITrash, ICrown } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { useNav, TAB_LABEL } from '../ui/nav';
@@ -189,12 +189,12 @@ export function ExtraForm({ trackerId, entryId, draftId, onKey, onDone }: { trac
       {t.kind === 'amount' && <Field label={`Amount (${t.unit})`}><input inputMode="decimal" value={value} onChange={e => setValue(e.target.value)} /></Field>}
       {t.kind === 'duration' && <Field label="Duration"><Stepper label="duration" value={mins} onChange={setMins} step={5} max={600} unit="min" /></Field>}
       {t.kind === 'level' && <Field label="Level"><Segmented label="Level" value={level} onChange={setLevel} options={LEVELS.map(l => ({ value: l, label: cap(l) }))} /></Field>}
-      <Field label="Notes" hint="(optional)"><textarea rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <NotesField value={notes} onChange={setNotes} />
       {t.preset === 'congestion' && <div className="alert notice soft"><IInfo size={18} /><span>This is a record only. If you’re worried about your baby’s breathing or health, contact your doctor or another healthcare professional, or call your local emergency number if it feels urgent.</span></div>}
       {err && <div className="alert error" role="alert">{err}</div>}
       <button className="btn primary block" onClick={save}>{ex ? 'Save changes' : `Save ${t.name}`}</button>
       </>}
-      {timer && <Field label="Notes" hint="(optional, saved with the timer)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>}
+      {timer && <NotesField rows={2} hint="(optional, saved with the timer)" value={notes} onChange={setNotes} />}
       {timer && err && <div className="alert error" role="alert">{err}</div>}
     </Page>
   );

@@ -1,3 +1,6 @@
+/** Notes on an entry are kept short: they're quick reminders, not a diary (the database allows 2000). */
+export const NOTES_MAX = 500;
+
 // Input checks that mirror the database constraints (supabase/migrations). A value the server would reject
 // must be caught here: otherwise the change is saved on the device, then refused on every sync attempt.
 // Pure and framework-free (unit-tested in tests/validate.test.ts).

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Page, Segmented, Field, useToast, Wave, useConfirm } from '../ui/ui';
+import { Page, Segmented, Field, NotesField, useToast, Wave, useConfirm } from '../ui/ui';
 import { IInfo, ITrash, IDrop, IPoo } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { useNav } from '../ui/nav';
@@ -46,7 +46,9 @@ export function LogPoo({ entryId, draftId, onKey, onDone }: { entryId?: string; 
   const [err, setErr] = useState<string | null>(null);
   if (!ctx) return null;
   const { baby } = ctx;
-  const iso = (() => { try { return fromLocalInput(time, tz); } catch { return new Date().toISOString(); } })();
+  // a cleared or broken time field falls back to now only for the age-based notice; saving asks for a time
+  const parsed = (() => { try { return fromLocalInput(time, tz); } catch { return null; } })();
+  const iso = parsed ?? new Date().toISOString();
   const ageDays = daysBetween(baby.date_of_birth, dateKey(iso, tz));
   const nappy = !!baby.wet_tracking || (seed?.nappy_type != null && seed.nappy_type !== 'poo');
   const wetOnly = nappy && ntype === 'wet';
@@ -55,6 +57,7 @@ export function LogPoo({ entryId, draftId, onKey, onDone }: { entryId?: string; 
 
   const save = async () => {
     setErr(null);
+    if (!parsed) return setErr('Please enter a valid date and time.');
     if (new Date(iso).getTime() > Date.now() + 5 * 60000) return setErr('Time can’t be in the future.');
     if (!existing) {
       const s = getState(); const nt = nappy ? ntype : 'poo';
@@ -86,7 +89,7 @@ export function LogPoo({ entryId, draftId, onKey, onDone }: { entryId?: string; 
       <Field label="Size" hint="(optional)"><Segmented label="Size" value={size} onChange={v => setSize(v === size ? null : v)} options={[{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }]} /></Field>
       <Field label="Texture" hint="(optional)"><Segmented label="Texture" value={texture} onChange={v => setTexture(v === texture ? null : v)} options={[{ value: 'soft', label: 'Soft' }, { value: 'loose', label: 'Loose/runny' }, { value: 'firm', label: 'Firm' }, { value: 'other', label: 'Other' }]} /></Field>
       </>}
-      <Field label="Notes" hint="(optional)"><textarea rows={3} placeholder={wetOnly ? 'optional' : 'e.g. unusual colour…'} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <NotesField value={notes} onChange={setNotes} placeholder={wetOnly ? 'optional' : 'e.g. unusual colour…'} />
       {notice && <div className="alert notice" role="note"><IInfo size={20} /><span>{notice}</span></div>}
       {!notice && !wetOnly && <p className="muted small">Colour alone can’t tell whether something is normal. If anything about your baby worries you, contact your healthcare provider.</p>}
       {err && <div className="alert error" role="alert">{err}</div>}

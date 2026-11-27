@@ -65,11 +65,14 @@ export function dayStats(d: Data, key: string, now = Date.now()): DayStats {
   }
   const sleepSeconds = sleeps.reduce((acc, s) => acc + sleepSecondsIn(s, a, b, now), 0);
   return {
-    key, feeds, poos, sleeps, feedCount: feeds.length, formulaMl, expressedMl, breastSeconds, breastCount, bottleCount,
+    key, feeds, poos, sleeps, feedCount: feeds.length, formulaMl: roundMl(formulaMl), expressedMl: roundMl(expressedMl), breastSeconds, breastCount, bottleCount,
     pooCount: poos.length, wetCount, wets, sleepCount: sleeps.length, sleepSeconds, activeSleep: sleeps.some(s => s.status !== 'completed'),
     avgFeedIntervalMin: avgInterval(feeds.map(f => f.start_datetime)),
   };
 }
+
+/** Bottle amounts can have one decimal; keep sums free of float noise (12.5 + 0.1 → 12.6, not 12.600000000000001). */
+export const roundMl = (ml: number) => Math.round(ml * 10) / 10;
 
 /** Mean gap (minutes) between consecutive timestamps; gaps over maxGapMin are treated as missing data. */
 export function avgInterval(isos: string[], maxGapMin = 8 * 60): number | null {

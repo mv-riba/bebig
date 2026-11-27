@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { syncNow } from '../lib/sync';
-import { Page, Segmented, Field, useToast, useNow, Wave, useConfirm } from '../ui/ui';
+import { Page, Segmented, Field, NotesField, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { ITimer, ICalendar, IBed, IPause, IPlay, IStop, ITrash, IMoon } from '../ui/icons';
 import { useBaby } from '../ui/hooks';
 import { upsertEntry, deleteEntry, restoreEntry, startSleep, pauseSleep, resumeSleep, stopSleep, discardSleep, sleepElapsed, sleepTimerTooLong, getState, live } from '../lib/store';
@@ -112,7 +112,7 @@ export function LogSleep({ entryId, draftId, onKey, onDone }: { entryId?: string
           <Field label="Fell asleep"><input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} /></Field>
           <Field label="Woke up"><input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
           {(() => { try { const s = new Date(fromLocalInput(start, tz)), e = new Date(fromLocalInput(end, tz)); return e > s ? <p className="muted">Duration: <strong>{formatDuration((e.getTime() - s.getTime()) / 1000)}</strong>{dateKey(s, tz) !== dateKey(e, tz) ? ' · crosses midnight' : ''}</p> : null; } catch { return null; } })()}
-          <Field label="Notes" hint="(optional)"><textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+          <NotesField rows={2} value={notes} onChange={setNotes} />
           {err && <div className="alert error" role="alert">{err}</div>}
           <button className="btn primary block" onClick={saveManual}>{existing && !replacing ? 'Save changes' : 'Save Sleep'}</button>
           {replacing && <button className="link small" onClick={() => setReplacing(null)}>Back to the timer</button>}

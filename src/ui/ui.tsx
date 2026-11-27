@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { IBack, IX } from './icons';
+import { NOTES_MAX } from '../lib/validate';
 
 // ---------- Ticking clock for elapsed times ----------
 export function useNow(intervalMs = 15000) {
@@ -102,13 +103,41 @@ export function Field({ label, hint, children, error }: { label: string; hint?: 
   );
 }
 
-export function Stepper({ value, onChange, step = 1, min = 0, max = 999, unit, label }: { value: number | null; onChange: (v: number | null) => void; step?: number; min?: number; max?: number; unit: string; label: string }) {
+export function NotesField({ value, onChange, hint = '(optional)', placeholder, rows = 3 }: { value: string; onChange: (v: string) => void; hint?: string; placeholder?: string; rows?: number }) {
+  const left = NOTES_MAX - value.length;
+  return (
+    <Field label="Notes" hint={hint}>
+      <textarea rows={rows} placeholder={placeholder} maxLength={NOTES_MAX} value={value} onChange={e => onChange(e.target.value.slice(0, NOTES_MAX))} />
+      {left <= 100 && <span className="muted small notes-count" aria-live="polite">{left === 0 ? `Notes can be up to ${NOTES_MAX} characters` : `${left} characters left`}</span>}
+    </Field>
+  );
+}
+
+/** Number box with − / + buttons. `decimals` allows that many digits after the point (a comma works too). */
+export function Stepper({ value, onChange, step = 1, min = 0, max = 999, unit, label, decimals = 0 }: { value: number | null; onChange: (v: number | null) => void; step?: number; min?: number; max?: number; unit: string; label: string; decimals?: number }) {
+  const round = (n: number) => { const f = 10 ** decimals; return Math.round(n * f) / f; };
+  const parse = (t: string) => (t === '' || t === '.' ? null : Number(t));
+  const [text, setText] = useState(value == null ? '' : String(value));
+  // follow outside changes (− / +, a reset) but keep what's being typed, e.g. "12."
+  useEffect(() => { if (parse(text) !== value) setText(value == null ? '' : String(value)); }, [value]);
+  const typed = (raw: string) => {
+    let t = raw.replace(',', '.');
+    if (decimals > 0) {
+      t = t.replace(/[^\d.]/g, '');
+      const dot = t.indexOf('.');
+      if (dot >= 0) t = t.slice(0, dot + 1) + t.slice(dot + 1).replace(/\./g, '').slice(0, decimals);
+    } else t = t.replace(/[^\d]/g, '');
+    let n = parse(t);
+    if (n != null && n > max) { n = max; t = String(max); }
+    setText(t); onChange(n);
+  };
+  const bump = (by: number) => { const n = round(Math.min(max, Math.max(min, (value ?? 0) + by))); setText(String(n)); onChange(n); };
   return (
     <div className="stepper">
-      <input aria-label={label} inputMode="numeric" value={value ?? ''} placeholder="—" onChange={e => { const v = e.target.value.replace(/[^\d]/g, ''); onChange(v === '' ? null : Math.min(max, Number(v))); }} />
+      <input aria-label={label} inputMode={decimals > 0 ? 'decimal' : 'numeric'} value={text} placeholder="—" onChange={e => typed(e.target.value)} />
       <span className="stepper-unit">{unit}</span>
-      <button type="button" className="round-btn" aria-label={`Decrease ${label}`} onClick={() => onChange(Math.max(min, (value ?? 0) - step))}>−</button>
-      <button type="button" className="round-btn" aria-label={`Increase ${label}`} onClick={() => onChange(Math.min(max, (value ?? 0) + step))}>+</button>
+      <button type="button" className="round-btn" aria-label={`Decrease ${label}`} onClick={() => bump(-step)}>−</button>
+      <button type="button" className="round-btn" aria-label={`Increase ${label}`} onClick={() => bump(step)}>+</button>
     </div>
   );
 }

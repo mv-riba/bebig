@@ -3,7 +3,7 @@
 // A server-side language model (see supabase/functions/assistant) may rephrase these verified answers,
 // but is never the source of figures. Medical questions are always redirected to healthcare professionals.
 import type { Data } from './calc';
-import { sortedFeeds, sortedPoos, completedSleeps, dayStats, avgInterval, keyRange, feedDurationSeconds, sleepDuration, mean } from './calc';
+import { sortedFeeds, sortedPoos, completedSleeps, dayStats, avgInterval, keyRange, feedDurationSeconds, sleepDuration, mean, roundMl } from './calc';
 import { buildInsights, EVIDENCE_LABEL } from './insights';
 import { todayKey, addDays, formatTime, formatDuration, formatAgo, formatDateKey, dateKey, TimeFormat, weekdayIndex, monthName } from './time';
 import { sleepElapsed } from './store';
@@ -90,7 +90,7 @@ export function answer(question: string, d: Data, growth: GrowthMeasurement[], f
     const r = parseRange(s, tz, 'week');
     const rows = r.keys.map(k => dayStats(d, k, now)).filter(x => x.feedCount || x.pooCount || x.sleepCount);
     if (!rows.length) return [{ kind: 'info', content: `Nothing has been recorded for ${r.label}.` }];
-    const lines = rows.map(x => `• ${formatDateKey(x.key, 'weekday')}: ${x.feedCount} feed${x.feedCount === 1 ? '' : 's'}${x.formulaMl + x.expressedMl ? ` (${x.formulaMl + x.expressedMl} ml bottle)` : ''}, ${x.pooCount} poo${x.pooCount === 1 ? '' : 's'}, ${x.sleepCount} sleep${x.sleepCount === 1 ? '' : 's'} totalling ${formatDuration(x.sleepSeconds)}${x.key === todayKey(tz) ? ' (so far)' : ''}`);
+    const lines = rows.map(x => `• ${formatDateKey(x.key, 'weekday')}: ${x.feedCount} feed${x.feedCount === 1 ? '' : 's'}${x.formulaMl + x.expressedMl ? ` (${roundMl(x.formulaMl + x.expressedMl)} ml bottle)` : ''}, ${x.pooCount} poo${x.pooCount === 1 ? '' : 's'}, ${x.sleepCount} sleep${x.sleepCount === 1 ? '' : 's'} totalling ${formatDuration(x.sleepSeconds)}${x.key === todayKey(tz) ? ' (so far)' : ''}`);
     const missing = r.keys.length - rows.length;
     return [{ kind: 'fact', content: `Recorded for ${r.label}:\n${lines.join('\n')}${missing ? `\n${missing} day${missing > 1 ? 's' : ''} had no records.` : ''}` }];
   }
@@ -179,7 +179,7 @@ export function answer(question: string, d: Data, growth: GrowthMeasurement[], f
   if (isFeed && /\b(ml|millilit|how much|volume|amount)\b/.test(s)) {
     const r = parseRange(s, tz);
     const st = r.keys.map(k => dayStats(d, k, now));
-    const formula = st.reduce((a, x) => a + x.formulaMl, 0), expressed = st.reduce((a, x) => a + x.expressedMl, 0), breastS = st.reduce((a, x) => a + x.breastSeconds, 0), breastN = st.reduce((a, x) => a + x.breastCount, 0);
+    const formula = roundMl(st.reduce((a, x) => a + x.formulaMl, 0)), expressed = roundMl(st.reduce((a, x) => a + x.expressedMl, 0)), breastS = st.reduce((a, x) => a + x.breastSeconds, 0), breastN = st.reduce((a, x) => a + x.breastCount, 0);
     if (!formula && !expressed && !breastN) return [{ kind: 'info', content: `No feeds have been recorded for ${r.label}.` }];
     const parts = [] as string[];
     if (formula) parts.push(`${formula} ml formula`); if (expressed) parts.push(`${expressed} ml expressed milk`);

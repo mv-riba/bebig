@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Page, Segmented, Chip, Field, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
+import { Page, Segmented, Chip, Field, NotesField, Stepper, useToast, useNow, Wave, useConfirm } from '../ui/ui';
 import { IBreast, IBottle, IFormula, IPlay, IPause, IStop, ITrash } from '../ui/icons';
 import { useNav, TAB_LABEL } from '../ui/nav';
 import { useBaby } from '../ui/hooks';
@@ -175,7 +175,7 @@ export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string;
             </>
           ) : (
             <>
-              <Field label="Quantity"><Stepper label="quantity" value={qty} onChange={setQty} step={10} max={500} unit="ml" /></Field>
+              <Field label="Quantity"><Stepper label="quantity" value={qty} onChange={setQty} step={10} max={500} unit="ml" decimals={1} /></Field>
               <Field label="End time" hint="(optional)"><input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></Field>
             </>
           )}
@@ -185,7 +185,7 @@ export function LogFeed({ entryId, draftId, onKey, onDone }: { entryId?: string;
       <Field label="How was it?" hint="(optional)">
         <div className="chips">{OBSERVATIONS.map(o => <Chip key={o} on={obs.includes(o)} onClick={() => setObs(obs.includes(o) ? obs.filter(x => x !== o) : [...obs, o])}>{o}</Chip>)}</div>
       </Field>
-      <Field label="Notes" hint="(optional)"><textarea rows={3} placeholder="e.g. very hungry, fell asleep…" value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <NotesField value={notes} onChange={setNotes} placeholder="e.g. very hungry, fell asleep…" />
       {err && <div className="alert error" role="alert">{err}</div>}
       {!timer && <button className="btn primary block" onClick={() => save(false)}>{existing ? 'Save changes' : 'Save Feed'}</button>}
       <Wave tone="peach" />
