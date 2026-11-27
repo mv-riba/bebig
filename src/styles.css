@@ -392,3 +392,39 @@ input:disabled { opacity: .6; } textarea { resize: vertical; } input::placeholde
 .tl-sync { display: inline-block; margin-top: 2px; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; color: #7A4C2E; background: var(--peach-l); align-self: flex-start; }
 .tl-sync.failed { color: #8A2E1E; background: #F7DCD6; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* ---------- Large text (Android "Font size") ----------
+   Text can be up to twice its normal size while the screen stays the same width. Rows of fixed
+   columns must let their cells shrink below their content, choices wrap onto a second line, and a
+   few labels that sit in narrow cells stop growing once they'd collide (cqw = % of the row's width).
+   At the normal text size none of these rules change how anything looks. */
+.summary, .quick { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sum-card { min-width: 0; container-type: inline-size; overflow-wrap: break-word; }
+.sum-time { font-size: min(1.35rem, 28cqw); }
+.sum-label { font-size: min(.92rem, 17cqw); }
+.quick .btn { min-width: 0; text-align: center; }
+
+.tabbar { grid-template-columns: repeat(5, minmax(0, 1fr)); container-type: inline-size; }
+.tab { min-width: 0; font-size: min(.72rem, 3.6cqw); }
+.tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.seg { flex-wrap: wrap; }
+.seg-opt { min-width: max-content; }
+.seg-lg .seg-opt { min-width: 0; container-type: inline-size; }
+.seg-lg .seg-opt > span { font-size: min(.9rem, 18cqw); overflow-wrap: break-word; max-width: 100%; }
+
+/* screen titles: the sides take only the room they need, so the Growth pill and Clear never cover the title */
+.screen-head { grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr); column-gap: 8px; container-type: inline-size; container-name: head; }
+.page-head { grid-template-columns: minmax(min-content, 1fr) auto minmax(min-content, 1fr); column-gap: 8px; }
+@container head (max-width: 19em) { .screen-head .pill-btn { font-size: 0; gap: 0; padding: 0 10px; } }
+
+.cal-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); container-type: inline-size; }
+.cal-day { font-size: min(.92rem, 5.5cqw); }
+.cal-wd { font-size: min(.72rem, 4.5cqw); }
+
+.swatches { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.swatch { min-width: 0; overflow-wrap: anywhere; text-align: center; }
+.day-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ds { min-width: 0; overflow-wrap: break-word; text-align: center; }
+.kv > div { flex-wrap: wrap; column-gap: 12px; }
+.cal-key { flex-wrap: wrap; row-gap: 4px; }
