@@ -7,6 +7,8 @@ import { upsertEntry, deleteEntry, restoreEntry, getState, updateBaby, useStore,
 import { similarEntry, similarQuestion } from '../lib/duplicates';
 import { IPlay, IPause, IStop } from '../ui/icons';
 import { MAX_EXTRA_AMOUNT } from '../lib/validate';
+import { overlappingExtras, mergeExtras, extraSpan } from '../lib/merge';
+import { askMerge, applyMerge } from '../ui/overlap';
 import { PRESETS, KIND_INFO, LEVELS, cap, setPreset, logExtraNow, logWetNow, oneTap, tileStatus, dailyEntryOn } from '../lib/extras';
 import { toLocalInput, fromLocalInput, formatAgo, todayKey, dateKey, formatClock, formatTime, formatDuration } from '../lib/time';
 import type { TrackerDef, TrackerIcon, TrackerKind, ExtraEntry, Level } from '../lib/types';
@@ -147,7 +149,25 @@ export function ExtraForm({ trackerId, entryId, draftId, onKey, onDone }: { trac
     // "Once a day" trackers: only one entry per day, so every caregiver sees the same check-off
     const given = dailyEntryOn(t, ctx.extras.filter(e => e.extra_id !== ex?.extra_id), tz, dateKey(iso, tz));
     if (given) return setErr(`${t.name} was already given that day at ${formatTime(given.datetime, tz, ctx.prefs.time_format)}. Edit that entry instead.`);
-    if (!ex) {
+    // a timed extra (e.g. a walk) saved over the time of one already logged: really one, so offer to merge them
+    let askedOverlap = false;
+    if (t.kind === 'duration') {
+      const cand = { extra_id: ex?.extra_id ?? '', tracker_id: t.tracker_id, datetime: iso, duration_seconds: (mins ?? 0) * 60, notes: notes.trim() || null };
+      const others = overlappingExtras(cand, ctx.extras);
+      if (others.length) {
+        const choice = await askMerge(confirm, t.name.toLowerCase(), others.map(o => { const [a, b] = extraSpan(o)!; return { start: new Date(a).toISOString(), end: new Date(b).toISOString() }; }), tz, ctx.prefs.time_format);
+        if (choice === 'cancel') return;
+        if (choice === 'merge') {
+          let merged;
+          try { merged = mergeExtras([...others, cand]); } catch (x: any) { return setErr(x.message); }
+          const undo = applyMerge('extras', others, ex?.extra_id, { ...merged, baby_id: ctx.baby.baby_id, tracker_id: t.tracker_id, value_num: null, level: null });
+          toast(`Merged into one ${t.name.toLowerCase()}`, { label: 'Undo', run: undo });
+          onDone(); return;
+        }
+        askedOverlap = true;
+      }
+    }
+    if (!ex && !askedOverlap) {
       const s = getState();
       const like = similarEntry({ kind: 'extra', e: { extra_id: '', tracker_id: t.tracker_id, datetime: iso } as ExtraEntry, t }, ctx.extras.filter(e => e.tracker_id === t.tracker_id).map(e => ({ kind: 'extra' as const, e, t })), tz);
       if (like && !(await confirm(similarQuestion(like, t.name.toLowerCase(), formatTime((like.e as ExtraEntry).datetime, tz, ctx.prefs.time_format), s.users, currentUserId())))) return;

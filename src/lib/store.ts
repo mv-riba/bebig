@@ -472,6 +472,16 @@ export function restoreEntry(table: Kind, id: string) {
   setState(s => { const x = (s[table] as any)[id]; if (x) { x.deleted_at = null; x.updated_at = nowIso(); x.updated_by = currentUserId(); queue(s, table, x); } });
 }
 
+/** Overlapping entries merged into one (see lib/merge.ts): `keep` gets the merged times, the `drop` ids are deleted.
+ *  Returns an Undo that puts everything back as it was. */
+export function saveMerged(table: 'feeds' | 'sleeps' | 'extras', keep: any, merged: any, drop: string[]) {
+  const idf = idField[table];
+  const before = { ...(state[table] as any)[keep[idf]] ?? keep };
+  upsertEntry(table, { ...merged, [idf]: keep[idf], baby_id: keep.baby_id });
+  for (const id of drop) deleteEntry(table, id);
+  return () => { upsertEntry(table, before); for (const id of drop) restoreEntry(table, id); };
+}
+
 export const live = <T extends { deleted_at?: string | null; baby_id: string }>(rec: Record<string, T>, baby_id: string) =>
   Object.values(rec).filter(r => r.baby_id === baby_id && !r.deleted_at);
 
