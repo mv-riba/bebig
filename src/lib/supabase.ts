@@ -10,6 +10,7 @@
 import { config } from './config';
 import { getState, setState, subscribe, setRemoteAuth, currentUserId, adoptRemoteUser, retryFailedSync, setInitialPullDone, requireReauth, mergeBabyInto, requeueBaby, myPrefs, setPlusStatus, setPausedBabies, forgetBabyLocally, applySleepResult, applyTimerResult, pruneFinishedTimers, setSyncPhase, getSyncPhase, isStale, UPDATE_TIMEOUT_MS, type Table, type OutboxOp, type SleepResult, type TimerResult } from './store';
 import type { PlusStatus } from './plans';
+import { fetchWithTimeout, isTimeout } from './net';
 import type { User } from './types';
 
 const URL_ = config.supabaseUrl.replace(/\/$/, '');
@@ -21,7 +22,7 @@ let auth: AuthSession | null = (() => { try { return JSON.parse(localStorage.get
 const saveAuth = (s: AuthSession | null) => { auth = s; s ? localStorage.setItem(AUTH_KEY, JSON.stringify(s)) : localStorage.removeItem(AUTH_KEY); };
 
 async function gotrue(path: string, body: any) {
-  const r = await fetch(`${URL_}/auth/v1/${path}`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetchWithTimeout(`${URL_}/auth/v1/${path}`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(weakPasswordMessage(j) || j.error_description || j.msg || j.message || 'Authentication failed');
   return j;
@@ -86,7 +87,7 @@ async function token(): Promise<string> {
 }
 
 async function rest(method: string, path: string, body?: any, prefer?: string) {
-  const r = await fetch(`${URL_}/rest/v1/${path}`, {
+  const r = await fetchWithTimeout(`${URL_}/rest/v1/${path}`, {
     method, headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json', ...(prefer ? { Prefer: prefer } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -194,7 +195,7 @@ async function pull() {
     try { const rows = await rest('GET', `${REMOTE[t].table}?select=*${since}&order=server_updated_at.asc&limit=5000`) as any[]; delete tableErrors[t]; return rows; }
     catch (e: any) {
       // one table failing (e.g. a database update not applied yet) must not stop everything else syncing
-      if (e.status === 401 || !navigator.onLine) throw e;
+      if (e.status === 401 || !navigator.onLine || isTimeout(e)) throw e; // a stuck connection: fail this sync and try again
       if (t === 'timers' && e.status === 404) return undefined; // migration 0008 not applied yet: timers stay on each device
       tableErrors[t] = e.message; return undefined;
     }
@@ -303,7 +304,7 @@ function repairLocalOnlyBabies() {
 // One sync at a time. Opening the app used to start two or three full syncs at once (screen shown again, live-update
 // connection, 15-s timer), which made catching up slower. A request made while one runs is done once right after it.
 let running: Promise<void> | null = null; let again = false;
-let updateTimer: any = null;
+let updateTimer: any = null; let retryTimer: any = null;
 function cycle(): Promise<void> {
   if (running) { again = true; return running; }
   running = (async () => {
@@ -330,6 +331,9 @@ async function cycleOnce() {
   catch (e: any) {
     console.warn('sync', e); syncError = navigator.onLine ? (e?.message || 'Sync failed') : 'Offline'; if (!navigator.onLine) setInitialPullDone(true);
     if (getSyncPhase() === 'updating') { clearTimeout(updateTimer); setSyncPhase('failed'); }
+    // No answer in time (usually a dead connection after waking up or changing network): try again in a second
+    // rather than waiting for the next 15-s check. Each try takes up to HEADERS_TIMEOUT_MS, so this can't spin.
+    if (isTimeout(e)) { clearTimeout(retryTimer); retryTimer = setTimeout(() => cycle(), 1000); }
   }
   if (!navigator.onLine && getSyncPhase() !== 'idle') { clearTimeout(updateTimer); setSyncPhase('idle'); } // offline has its own banner
   setState(() => {}, false);
@@ -357,7 +361,7 @@ export function startRemoteSync() {
         try { recovery = { email, s: toSession(await gotrue('verify', { type: 'recovery', email, token: code.replace(/\s/g, '') })) }; }
         catch { throw new Error('That code is wrong or has expired. Check the latest email from Bebig, or send a new code.'); }
       }
-      const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${recovery.s.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      const r = await fetchWithTimeout(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${recovery.s.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         if (j?.error_code === 'same_password' || j?.code === 'same_password') throw new Error('That’s your current password. Choose a different one, or go back and sign in with it.');
@@ -367,7 +371,7 @@ export function startRemoteSync() {
       saveAuth(s);
       return { user_id: s.user.id, email: s.user.email, display_name: s.user.user_metadata?.display_name || s.user.email.split('@')[0] };
     },
-    async signOut() { stopRealtime(); try { await fetch(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
+    async signOut() { stopRealtime(); try { await fetchWithTimeout(`${URL_}/auth/v1/logout`, { method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${auth?.access_token}` } }); } catch { /* offline */ } saveAuth(null); localStorage.removeItem(cursorKey); for (const k of Object.keys(cursors)) delete cursors[k]; },
     async deleteAccount() { await rest('POST', 'rpc/delete_my_account', {}); saveAuth(null); },
     async updateName(display_name) { await rest('PATCH', `profiles?user_id=eq.${auth!.user.id}`, { display_name: display_name.slice(0, 80) }, 'return=minimal'); },
     async leaveBaby(baby_id) {
@@ -384,7 +388,7 @@ export function startRemoteSync() {
   if (q.get('token_hash') && q.get('type')) {
     const token_hash = q.get('token_hash')!, type = q.get('type')!;
     history.replaceState(null, '', location.pathname);
-    fetch(`${URL_}/auth/v1/verify`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ token_hash, type }) })
+    fetchWithTimeout(`${URL_}/auth/v1/verify`, { method: 'POST', headers: { apikey: KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ token_hash, type }) })
       .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.msg || j.error_description || 'expired'); return j; })
       .then(async j => {
         if (!confirmAccountFromLink(j.user)) return;
@@ -392,7 +396,7 @@ export function startRemoteSync() {
         if (type === 'recovery' || type === 'invite') {
           const pw = prompt(type === 'invite' ? 'Welcome to Bebig! Choose a password for your account (at least 8 characters, with upper and lower case letters, a number and a symbol)' : 'Choose a new password (at least 8 characters, with upper and lower case letters, a number and a symbol)');
           if (pw && pw.length >= 8) {
-            const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${sess.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+            const r = await fetchWithTimeout(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${sess.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
             alert(r.ok ? (type === 'invite' ? 'Password set — you’re signed in.' : 'Password updated.') : 'Sorry, the password could not be changed. Password must be at least 8 characters, include upper and lower case letters, a number, and a symbol. If it already does, request a new link.');
           }
         }
@@ -407,7 +411,7 @@ export function startRemoteSync() {
     // email confirmation / magic link: sign straight in
     history.replaceState(null, '', location.pathname);
     const at = h.get('access_token')!, rt = h.get('refresh_token') || '', exp = Number(h.get('expires_in') || 3600);
-    fetch(`${URL_}/auth/v1/user`, { headers: { apikey: KEY, Authorization: `Bearer ${at}` } }).then(r => r.ok ? r.json() : Promise.reject())
+    fetchWithTimeout(`${URL_}/auth/v1/user`, { headers: { apikey: KEY, Authorization: `Bearer ${at}` } }).then(r => r.ok ? r.json() : Promise.reject())
       .then(user => { if (!confirmAccountFromLink(user)) return; saveAuth({ access_token: at, refresh_token: rt, expires_at: Date.now() + exp * 1000, user }); adoptRemoteUser({ user_id: user.id, email: user.email, display_name: user.user_metadata?.display_name || user.email.split('@')[0] }); })
       .catch(() => note('Your email is confirmed. Please sign in.'));
   }
@@ -417,7 +421,7 @@ export function startRemoteSync() {
     setTimeout(async () => {
       const pw = prompt('Choose a new password (at least 8 characters, with upper and lower case letters, a number and a symbol)');
       if (!pw || pw.length < 8) return alert('Password not changed.');
-      const r = await fetch(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
+      const r = await fetchWithTimeout(`${URL_}/auth/v1/user`, { method: 'PUT', headers: { apikey: KEY, Authorization: `Bearer ${at}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) });
       alert(r.ok ? 'Password updated — please sign in.' : 'Sorry, that link has expired. Request a new one.');
     }, 300);
   }
@@ -541,7 +545,7 @@ export async function diagnostics(): Promise<string> {
           const local = Object.values(s[t] as Record<string, any>).filter(r => r.baby_id === b.baby_id && !r.deleted_at).length;
           let remote = '?';
           try {
-            const r = await fetch(`${URL_}/rest/v1/${REMOTE[t].table}?baby_id=eq.${b.baby_id}&deleted_at=is.null&select=${REMOTE[t].id}`, { headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, Prefer: 'count=exact', Range: '0-0' } });
+            const r = await fetchWithTimeout(`${URL_}/rest/v1/${REMOTE[t].table}?baby_id=eq.${b.baby_id}&deleted_at=is.null&select=${REMOTE[t].id}`, { headers: { apikey: KEY, Authorization: `Bearer ${await token()}`, Prefer: 'count=exact', Range: '0-0' } });
             remote = (r.headers.get('content-range') || '').split('/')[1] || String(r.status);
           } catch (e: any) { remote = 'err'; }
           parts.push(`${t} ${local}/${remote}`);
