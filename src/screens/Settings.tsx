@@ -209,11 +209,13 @@ export function SharingPage({ onBack }: { onBack: () => void }) {
       <h2 className="sec-title">Members</h2>
       <div className="card list">{active.map(a => {
         const ms = memberState(a, active, st);
+        const showKeep = ms !== 'free' && active.length > 2 && (ms === 'paused' || temporary);
         return (
-          <Row key={a.access_id} icon={<span className={`avatar avatar-ph sm ${ms === 'paused' ? 'paused' : ''}`}>{nameOf(a)[0].toUpperCase()}</span>}
+          // With two buttons there isn't room beside the name and email, so they move to their own line below.
+          <Row key={a.access_id} className={showKeep ? 'row-actions-below' : ''} icon={<span className={`avatar avatar-ph sm ${ms === 'paused' ? 'paused' : ''}`}>{nameOf(a)[0].toUpperCase()}</span>}
             title={nameOf(a)} sub={<>{a.invited_email} · {STATE_LABEL[ms]}{ms === 'free' && active.length > 2 && !st.plus ? ' · on the free plan' : ''}</>}
             right={isOwner && a.role !== 'owner' ? <span className="btn-row">
-              {ms !== 'free' && active.length > 2 && (ms === 'paused' || temporary) && <button className="btn soft small" onClick={() => keep(a.access_id)}>{ms === 'paused' ? 'Unpause' : 'Keep on free'}</button>}
+              {showKeep && <button className="btn soft small" onClick={() => keep(a.access_id)}>{ms === 'paused' ? 'Unpause' : 'Keep on free'}</button>}
               <button className="btn soft small danger" onClick={async () => { if (await confirm({ title: 'Revoke access?', text: `${a.invited_email} will no longer see ${b.name}’s records.`, ok: 'Revoke', danger: true })) { revokeAccess(a.access_id); toast('Access revoked'); } }}>Revoke</button>
             </span> : null} />
         );

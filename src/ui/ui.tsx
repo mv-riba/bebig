@@ -117,10 +117,10 @@ export function Empty({ icon, title, text, action }: { icon?: React.ReactNode; t
   return <div className="empty">{icon && <div className="empty-ic">{icon}</div>}<strong>{title}</strong>{text && <p>{text}</p>}{action}</div>;
 }
 
-export function Row({ icon, title, sub, onClick, right }: { icon?: React.ReactNode; title: React.ReactNode; sub?: React.ReactNode; onClick?: () => void; right?: React.ReactNode }) {
+export function Row({ icon, title, sub, onClick, right, className = '' }: { icon?: React.ReactNode; title: React.ReactNode; sub?: React.ReactNode; onClick?: () => void; right?: React.ReactNode; className?: string }) {
   const C: any = onClick ? 'button' : 'div';
   return (
-    <C className={`row ${onClick ? 'tap' : ''}`} onClick={onClick} type={onClick ? 'button' : undefined}>
+    <C className={`row ${onClick ? 'tap' : ''} ${className}`} onClick={onClick} type={onClick ? 'button' : undefined}>
       {icon && <span className="row-ic">{icon}</span>}
       <span className="row-main"><span className="row-title">{title}</span>{sub && <span className="row-sub">{sub}</span>}</span>
       {right}
